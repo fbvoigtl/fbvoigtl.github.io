@@ -2,9 +2,8 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. MOCK DATABASE ---
-    // This is our "database," just a JavaScript object
-    // with arrays of objects representing tables.
-const db = {
+    // (Deine große Datenbank von vorhin)
+    const db = {
         users: [
             { id: 1, name: 'Alice', age: 25, city: 'London', status: 'active' },
             { id: 2, name: 'Bob', age: 32, city: 'Paris', status: 'active' },
@@ -71,7 +70,7 @@ const db = {
             { order_id: 519, user_id: 5, product_id: 102, quantity: 4, order_date: '2023-03-18' },
             { order_id: 520, user_id: 8, product_id: 106, quantity: 1, order_date: '2023-03-20' },
             { order_id: 521, user_id: 16, product_id: 119, quantity: 2, order_date: '2023-03-21' },
-            { order_id: 522, user_id: 17, product_id: 117, quantity: 1, order_date: '2023-03-22' }, // Order for out-of-stock item
+            { order_id: 522, user_id: 17, product_id: 117, quantity: 1, order_date: '2023-03-22' },
             { order_id: 523, user_id: 13, product_id: 108, quantity: 3, order_date: '2023-03-25' },
             { order_id: 524, user_id: 4, product_id: 101, quantity: 1, order_date: '2023-04-01' },
             { order_id: 525, user_id: 7, product_id: 112, quantity: 5, order_date: '2023-04-02' },
@@ -94,11 +93,13 @@ const db = {
         messageDiv.innerHTML = '';
 
         if (!query) {
-            displayError("Please enter a query.");
+            displayError("Bitte gib eine Abfrage ein.");
             return;
         }
 
         try {
+            // parseAndExecute gibt jetzt entweder ein Array (für SELECT)
+            // oder ein Objekt (für INSERT) zurück
             const result = parseAndExecute(query);
             displayResults(result);
         } catch (error) {
@@ -106,76 +107,70 @@ const db = {
         }
     }
 
- // --- 4. DER KERN: PARSER & EXECUTOR (MIT BESSEREN FEHLERN) ---
+    // --- 4. DER KERN: DER NEUE "DISPATCHER" ---
     function parseAndExecute(query) {
-        // Normalisieren der Abfrage (mehrfache Leerzeichen, Leerzeichen am Anfang/Ende)
         const normalizedQuery = query.replace(/\s+/g, ' ').trim();
         const upperQuery = normalizedQuery.toUpperCase();
 
-        // --- Bessere Fehlerprüfungen ---
-        // 1. Prüfen, ob die Abfrage überhaupt Text enthält
-        if (!normalizedQuery) {
-            // Dies wird eigentlich schon in handleQuery() abgefangen, aber sicher ist sicher.
-            throw new Error("Bitte gib eine Abfrage ein.");
-        }
-
-        // 2. Prüfen, ob sie mit SELECT beginnt
-        if (!upperQuery.startsWith('SELECT ')) {
-            throw new Error("Syntax-Fehler: Jede Abfrage muss mit 'SELECT' beginnen.");
-        }
-
-        // 3. Prüfen, ob ein FROM enthalten ist
-        if (!upperQuery.includes(' FROM ')) {
-            throw new Error("Syntax-Fehler: Der Abfrage fehlt ein 'FROM'-Schlüsselwort.");
-        }
-
-        // 4. Prüfen, ob sie mit einem Semikolon endet
+        // Prüfen, ob die Abfrage mit einem Semikolon endet
         if (!normalizedQuery.endsWith(';')) {
             throw new Error("Syntax-Fehler: Jede Abfrage muss mit einem Semikolon (';') enden.");
         }
-        // --- Ende der Fehlerprüfungen ---
 
-        // Regex, um SELECT, FROM und optional WHERE zu erfassen
-        // (Das Semikolon am Ende ist jetzt erforderlich)
+        // --- DER DISPATCHER ---
+        // Leitet die Abfrage an die richtige Funktion weiter
+        if (upperQuery.startsWith('SELECT ')) {
+            return handleSelect(normalizedQuery);
+        }
+
+        if (upperQuery.startsWith('INSERT INTO ')) {
+            return handleInsert(normalizedQuery);
+        }
+
+        // Hier kannst du später UPDATE, DELETE usw. hinzufügen
+        // if (upperQuery.startsWith('UPDATE ')) {
+        //     return handleUpdate(normalizedQuery);
+        // }
+
+        throw new Error(`Syntax-Fehler: Nicht unterstützter Befehlstyp. Beginne mit SELECT oder INSERT INTO.`);
+    }
+
+    // --- 5. NEUE SPEZIALFUNKTIONEN ---
+
+    /**
+     * Verarbeitet SELECT-Abfragen
+     * (Dies ist im Grunde der Code unserer *alten* parseAndExecute-Funktion)
+     */
+    function handleSelect(query) {
         const sqlRegex = /SELECT\s+(.+?)\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+))?;/i;
-        const match = normalizedQuery.match(sqlRegex);
+        const match = query.match(sqlRegex);
 
         if (!match) {
-            // Dieser Fehler tritt jetzt nur noch bei komplexeren Syntaxproblemen auf
-            throw new Error('Ungültige SQL-Syntax. Überprüfe die Struktur deiner SELECT-, FROM- oder WHERE-Klausel.');
+            throw new Error('Ungültige SELECT-Syntax. Überprüfe die Struktur deiner SELECT-, FROM- oder WHERE-Klausel.');
         }
 
         const [_, selectClause, fromClause, whereClauseWithSemicolon] = match;
         const tableName = fromClause.trim();
 
-        // Das optionale WHERE-Segment kann das Semikolon enthalten, entfernen wir es
         let whereClause = undefined;
         if (whereClauseWithSemicolon) {
             whereClause = whereClauseWithSemicolon.replace(/;$/, '').trim();
         }
 
-        // 1. --- FROM ---
         if (!db[tableName]) {
             throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
         }
-        // Kopie der Daten, um das Original nicht zu verändern
         let data = [...db[tableName]];
 
-        // 2. --- WHERE (Filtern) ---
         if (whereClause) {
-            data = data.filter(row => {
-                return evaluateCondition(row, whereClause);
-            });
+            data = data.filter(row => evaluateCondition(row, whereClause));
         }
 
-        // 3. --- SELECT (Spalten auswählen) ---
         const columns = selectClause.split(',').map(c => c.trim());
 
         if (columns.length === 1 && columns[0] === '*') {
-            // SELECT *
             return data;
         } else {
-            // SELECT col1, col2
             return data.map(row => {
                 const newRow = {};
                 for (const col of columns) {
@@ -189,12 +184,74 @@ const db = {
             });
         }
     }
-    // --- 5. HELPER FUNCTIONS ---
+
+    /**
+     * Verarbeitet INSERT-Abfragen
+     * Unterstützt: INSERT INTO table (col1, col2) VALUES (val1, val2);
+     */
+    function handleInsert(query) {
+        const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)\s*\((.+?)\)\s+VALUES\s*\((.+?)\);/i;
+        const match = query.match(insertRegex);
+
+        if (!match) {
+            throw new Error('Ungültige INSERT-Syntax. Erwartet: INSERT INTO tabelle (spalte1, spalte2) VALUES (wert1, wert2);');
+        }
+
+        const [_, tableName, colStr, valStr] = match;
+
+        if (!db[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+
+        const columns = colStr.split(',').map(c => c.trim());
+        const values = valStr.split(',').map(v => v.trim());
+
+        if (columns.length !== values.length) {
+            throw new Error(`Fehler: Die Anzahl der Spalten (${columns.length}) stimmt nicht mit der Anzahl der Werte (${values.length}) überein.`);
+        }
+
+        const newRow = {};
+        for (let i = 0; i < columns.length; i++) {
+            const col = columns[i];
+            const valStr = values[i];
+            
+            // Wert parsen (String oder Zahl)
+            let parsedValue;
+            const cleanedValStr = valStr.replace(/['"]/g, ''); // Anführungszeichen entfernen
+
+            if (!isNaN(parseFloat(cleanedValStr)) && isFinite(cleanedValStr)) {
+                parsedValue = parseFloat(cleanedValStr); // Ist eine Zahl
+            } else {
+                parsedValue = cleanedValStr; // Ist ein String
+            }
+
+            newRow[col] = parsedValue;
+        }
+
+        // Überprüfen, ob alle Spalten in der neuen Zeile auch in der DB-Struktur vorhanden sind
+        // (Simulierte Tabellenstruktur basiert auf dem ersten Eintrag)
+        if (db[tableName].length > 0) {
+            const firstRow = db[tableName][0];
+            for (const col of columns) {
+                if (!firstRow.hasOwnProperty(col)) {
+                    throw new Error(`Fehler: Spalte '${col}' existiert nicht in Tabelle '${tableName}'.`);
+                }
+            }
+        }
+
+        // Neue Zeile zur In-Memory-DB hinzufügen
+        db[tableName].push(newRow);
+
+        // Erfolgsmeldung zurückgeben
+        return { message: `1 Zeile erfolgreich in '${tableName}' eingefügt.` };
+    }
+
+
+    // --- 6. HELPER FUNCTIONS ---
 
     // A very simple WHERE clause evaluator
     // Supports: col = val, col > val, col < val
     function evaluateCondition(row, condition) {
-        // Find the operator (=, >, <)
         let operator;
         if (condition.includes('=')) {
             operator = '=';
@@ -213,22 +270,16 @@ const db = {
         }
 
         const rowValue = row[colName];
-        
-        // Clean the value (remove quotes from strings)
         const compareValueStr = valStr.replace(/['"]/g, '');
-
-        // Check if the value is a number or string
         let compareValue;
         if (!isNaN(parseFloat(compareValueStr)) && isFinite(compareValueStr)) {
-            compareValue = parseFloat(compareValueStr); // It's a number
+            compareValue = parseFloat(compareValueStr);
         } else {
-            compareValue = compareValueStr; // It's a string
+            compareValue = compareValueStr;
         }
         
-        // Perform comparison
         switch (operator) {
             case '=':
-                // Use == for type coercion (e.g., 25 == "25")
                 return rowValue == compareValue;
             case '>':
                 return rowValue > compareValue;
@@ -239,44 +290,53 @@ const db = {
         }
     }
 
-    // Renders the results as an HTML table
+    /**
+     * (ANGEPASST) Zeigt Ergebnisse an
+     * Kann jetzt Tabellen (von SELECT) oder Erfolgsmeldungen (von INSERT) anzeigen
+     */
     function displayResults(result) {
-        if (result.length === 0) {
-            messageDiv.textContent = 'Query executed successfully. 0 rows returned.';
+        // Fall 1: Das Ergebnis ist eine Erfolgsmeldung (z.B. von INSERT)
+        if (result.message) {
+            messageDiv.textContent = result.message;
+            outputDiv.innerHTML = ''; // Keine Tabelle anzeigen
             return;
         }
 
-        messageDiv.textContent = `Query executed successfully. ${result.length} rows returned.`;
+        // Fall 2: Das Ergebnis ist ein Array (von SELECT)
+        if (Array.isArray(result)) {
+            if (result.length === 0) {
+                messageDiv.textContent = 'Abfrage erfolgreich ausgeführt. 0 Zeilen zurückgegeben.';
+                return;
+            }
 
-        // Create table
-        const table = document.createElement('table');
-        
-        // Create table header
-        const thead = table.createTHead();
-        const headerRow = thead.insertRow();
-        const headers = Object.keys(result[0]);
-        headers.forEach(headerText => {
-            const th = document.createElement('th');
-            th.textContent = headerText;
-            headerRow.appendChild(th);
-        });
+            messageDiv.textContent = `Abfrage erfolgreich ausgeführt. ${result.length} Zeilen zurückgegeben.`;
 
-        // Create table body
-        const tbody = table.createTBody();
-        result.forEach(rowData => {
-            const row = tbody.insertRow();
-            headers.forEach(header => {
-                const cell = row.insertCell();
-                cell.textContent = rowData[header];
+            // Tabelle erstellen
+            const table = document.createElement('table');
+            const thead = table.createTHead();
+            const headerRow = thead.insertRow();
+            const headers = Object.keys(result[0]);
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
             });
-        });
 
-        outputDiv.appendChild(table);
+            const tbody = table.createTBody();
+            result.forEach(rowData => {
+                const row = tbody.insertRow();
+                headers.forEach(header => {
+                    const cell = row.insertCell();
+                    cell.textContent = rowData[header];
+                });
+            });
+
+            outputDiv.appendChild(table);
+        }
     }
 
-    // Shows an error message
+    // Zeigt eine Fehlermeldung an
     function displayError(message) {
         outputDiv.innerHTML = `<div class="error">${message}</div>`;
     }
-
 });
