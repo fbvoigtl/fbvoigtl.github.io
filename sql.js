@@ -331,10 +331,65 @@ document.addEventListener('DOMContentLoaded', () => {
      * (NEU) Führt den WHERE-Teil des Plans aus.
      * (Wrapper um die bestehende evaluateCondition-Funktion)
      */
+/**
+     * (AKTUALISIERT) Führt den WHERE-Teil des Plans aus.
+     * Unterstützt jetzt mehrere 'AND'-Bedingungen.
+     */
+/**
+     * (AKTUALISIERT) Führt den WHERE-Teil des Plans aus.
+     * Unterstützt jetzt 'AND'- und 'OR'-Bedingungen.
+     * (Priorität: AND wird VOR OR ausgewertet)
+     */
+    /**
+     * (AKTUALISIERT) Führt den WHERE-Teil des Plans aus.
+     * Unterstützt AND/OR, entfernt Klammern UND
+     * unterstützt 'NOT' vor einer Bedingung.
+     */
     function executeWhere(data, whereClause) {
-        return data.filter(row => evaluateCondition(row, whereClause));
-    }
+        // Entfernt alle Klammern, um den einfachen Split-Parser nicht zu verwirren.
+        const cleanClause = whereClause.replace(/[()]/g, ''); 
 
+        // 1. Teile bei "OR" auf
+        const orGroups = cleanClause.split(/ OR /i).map(c => c.trim());
+
+        // 2. Filtere die Daten
+        return data.filter(row => {
+            
+            // 3. Prüfe, ob IRGENDEINE OR-Gruppe wahr ist
+            return orGroups.some(andGroupStr => {
+                
+                // 4. Innerhalb jeder OR-Gruppe, teile bei "AND"
+                const andConditions = andGroupStr.split(/ AND /i).map(c => c.trim());
+                
+                // 5. Prüfe, ob ALLE AND-Bedingungen wahr sind
+                return andConditions.every(originalConditionStr => {
+                    let conditionStr = originalConditionStr;
+                    let isNegated = false; // Flag für NOT
+
+                    // --- HIER IST DIE NEUE LOGIK ---
+                    // Prüfen, ob die Bedingung mit NOT beginnt (Groß/Kleinschreibung egal)
+                    if (conditionStr.toUpperCase().startsWith('NOT ')) {
+                        isNegated = true;
+                        // "NOT " (4 Zeichen) von der Bedingung entfernen
+                        conditionStr = conditionStr.substring(4).trim();
+                    }
+                    // --- ENDE DER NEUEN LOGIK ---
+
+                    try {
+                        // Bewerte die *saubere* Bedingung (z.B. "age > 20")
+                        const result = evaluateCondition(row, conditionStr);
+                        
+                        // Wenn 'NOT' davor stand, kehre das Ergebnis um
+                        // ansonsten gib das normale Ergebnis zurück
+                        return isNegated ? !result : result;
+
+                    } catch (e) {
+                        throw new Error(`Fehler in der WHERE-Klausel bei '${originalConditionStr}': ${e.message}`);
+                    }
+                });
+            });
+        });
+    }
     /**
      * (NEU) Führt den SELECT-Teil des Plans aus.
      * (Aus der alten handleSelect-Funktion extrahiert)
@@ -506,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return false; // Diese Zeile ist ein Duplikat, wir filtern sie raus
         });
     }
-    
+
     function displayError(message) {
         outputDiv.innerHTML = `<div class="error">${message}</div>`;
     }
