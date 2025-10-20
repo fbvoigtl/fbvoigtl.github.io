@@ -2,7 +2,6 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. MOCK DATABASE ---
-    // (Deine große Datenbank von vorhin)
     const db = {
         users: [
             { id: 1, name: 'Alice', age: 25, city: 'London', status: 'active' },
@@ -88,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleQuery() {
         const query = queryInput.value.trim();
-        // Clear previous results
         outputDiv.innerHTML = '';
         messageDiv.innerHTML = '';
 
@@ -98,8 +96,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // parseAndExecute gibt jetzt entweder ein Array (für SELECT)
-            // oder ein Objekt (für INSERT) zurück
             const result = parseAndExecute(query);
             displayResults(result);
         } catch (error) {
@@ -107,18 +103,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 4. DER KERN: DER NEUE "DISPATCHER" ---
+    // --- 4. DER KERN: DER "DISPATCHER" ---
+    // Dieser bleibt schlank und leitet nur weiter.
     function parseAndExecute(query) {
         const normalizedQuery = query.replace(/\s+/g, ' ').trim();
         const upperQuery = normalizedQuery.toUpperCase();
 
-        // Prüfen, ob die Abfrage mit einem Semikolon endet
         if (!normalizedQuery.endsWith(';')) {
             throw new Error("Syntax-Fehler: Jede Abfrage muss mit einem Semikolon (';') enden.");
         }
 
-        // --- DER DISPATCHER ---
-        // Leitet die Abfrage an die richtige Funktion weiter
         if (upperQuery.startsWith('SELECT ')) {
             return handleSelect(normalizedQuery);
         }
@@ -126,68 +120,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (upperQuery.startsWith('INSERT INTO ')) {
             return handleInsert(normalizedQuery);
         }
-
-        // Hier kannst du später UPDATE, DELETE usw. hinzufügen
+        
         // if (upperQuery.startsWith('UPDATE ')) {
         //     return handleUpdate(normalizedQuery);
+        // }
+        // if (upperQuery.startsWith('DELETE FROM ')) {
+        //     return handleDelete(normalizedQuery);
         // }
 
         throw new Error(`Syntax-Fehler: Nicht unterstützter Befehlstyp. Beginne mit SELECT oder INSERT INTO.`);
     }
 
-    // --- 5. NEUE SPEZIALFUNKTIONEN ---
+    // --- 5. BEFEHLS-HANDLER ---
 
     /**
-     * Verarbeitet SELECT-Abfragen
-     * (Dies ist im Grunde der Code unserer *alten* parseAndExecute-Funktion)
-     */
-    function handleSelect(query) {
-        const sqlRegex = /SELECT\s+(.+?)\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+))?;/i;
-        const match = query.match(sqlRegex);
-
-        if (!match) {
-            throw new Error('Ungültige SELECT-Syntax. Überprüfe die Struktur deiner SELECT-, FROM- oder WHERE-Klausel.');
-        }
-
-        const [_, selectClause, fromClause, whereClauseWithSemicolon] = match;
-        const tableName = fromClause.trim();
-
-        let whereClause = undefined;
-        if (whereClauseWithSemicolon) {
-            whereClause = whereClauseWithSemicolon.replace(/;$/, '').trim();
-        }
-
-        if (!db[tableName]) {
-            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
-        }
-        let data = [...db[tableName]];
-
-        if (whereClause) {
-            data = data.filter(row => evaluateCondition(row, whereClause));
-        }
-
-        const columns = selectClause.split(',').map(c => c.trim());
-
-        if (columns.length === 1 && columns[0] === '*') {
-            return data;
-        } else {
-            return data.map(row => {
-                const newRow = {};
-                for (const col of columns) {
-                    if (row.hasOwnProperty(col)) {
-                        newRow[col] = row[col];
-                    } else {
-                        throw new Error(`Fehler: Spalte '${col}' nicht in Tabelle '${tableName}' gefunden.`);
-                    }
-                }
-                return newRow;
-            });
-        }
-    }
-
-    /**
-     * Verarbeitet INSERT-Abfragen
-     * Unterstützt: INSERT INTO table (col1, col2) VALUES (val1, val2);
+     * Verarbeitet INSERT-Abfragen (unverändert)
      */
     function handleInsert(query) {
         const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)\s*\((.+?)\)\s+VALUES\s*\((.+?)\);/i;
@@ -196,7 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!match) {
             throw new Error('Ungültige INSERT-Syntax. Erwartet: INSERT INTO tabelle (spalte1, spalte2) VALUES (wert1, wert2);');
         }
-
+        
         const [_, tableName, colStr, valStr] = match;
 
         if (!db[tableName]) {
@@ -214,22 +161,16 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = 0; i < columns.length; i++) {
             const col = columns[i];
             const valStr = values[i];
-            
-            // Wert parsen (String oder Zahl)
             let parsedValue;
-            const cleanedValStr = valStr.replace(/['"]/g, ''); // Anführungszeichen entfernen
-
+            const cleanedValStr = valStr.replace(/['"]/g, '');
             if (!isNaN(parseFloat(cleanedValStr)) && isFinite(cleanedValStr)) {
-                parsedValue = parseFloat(cleanedValStr); // Ist eine Zahl
+                parsedValue = parseFloat(cleanedValStr);
             } else {
-                parsedValue = cleanedValStr; // Ist ein String
+                parsedValue = cleanedValStr;
             }
-
             newRow[col] = parsedValue;
         }
 
-        // Überprüfen, ob alle Spalten in der neuen Zeile auch in der DB-Struktur vorhanden sind
-        // (Simulierte Tabellenstruktur basiert auf dem ersten Eintrag)
         if (db[tableName].length > 0) {
             const firstRow = db[tableName][0];
             for (const col of columns) {
@@ -239,18 +180,218 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Neue Zeile zur In-Memory-DB hinzufügen
         db[tableName].push(newRow);
-
-        // Erfolgsmeldung zurückgeben
         return { message: `1 Zeile erfolgreich in '${tableName}' eingefügt.` };
     }
 
+    /**
+     * (NEU) Verarbeitet SELECT-Abfragen über eine Pipeline.
+     */
+    /**
+     * (AKTUALISIERT) Verarbeitet SELECT-Abfragen über eine Pipeline.
+     * Enthält jetzt den 'DISTINCT'-Schritt.
+     */
+    function handleSelect(query) {
+        // 1. PARSING: Abfrage in einen "Plan" umwandeln
+        const plan = buildQueryPlan(query);
 
-    // --- 6. HELPER FUNCTIONS ---
+        // 2. EXECUTION: Die Pipeline Schritt für Schritt ausführen
+        
+        // a. FROM
+        let data = executeFrom(plan.from);
+        
+        // b. WHERE
+        if (plan.where) {
+            data = executeWhere(data, plan.where);
+        }
 
-    // A very simple WHERE clause evaluator
-    // Supports: col = val, col > val, col < val
+        // (zukünftiges GROUP BY käme hier hin)
+
+        // c. SELECT (Berechnungen & Aliase)
+        data = executeSelect(data, plan.select);
+
+        // d. DISTINCT (NEUER SCHRITT)
+        // Muss nach SELECT und vor ORDER BY ausgeführt werden
+        if (plan.distinct) {
+            data = executeDistinct(data);
+        }
+
+        // e. ORDER BY (Sortiert die *finalen* Daten)
+        if (plan.orderBy) {
+            data = executeOrderBy(data, plan.orderBy);
+        }
+        
+        // (zukünftiges LIMIT käme hier hin)
+
+        return data;
+    }
+
+    // --- 6. PARSING-HILFSFUNKTIONEN (NEU) ---
+
+    /**
+     * (NEU) Zerlegt die SELECT-Abfrage in ihre Teile (den "Plan").
+     */
+    /**
+     * (AKTUALISIERT) Zerlegt die SELECT-Abfrage in ihre Teile (den "Plan").
+     * Erkennt jetzt das 'DISTINCT'-Schlüsselwort.
+     */
+    function buildQueryPlan(query) {
+        const plan = {};
+
+        // 1. FROM (unverändert)
+        const fromMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)/i);
+        if (!fromMatch) throw new Error("Syntax-Fehler: 'FROM'-Klausel nicht gefunden.");
+        plan.from = fromMatch[1];
+
+        // 2. SELECT (AKTUALISIERT für DISTINCT)
+        const selectMatch = query.match(/SELECT\s+(.+?)\s+FROM/i);
+        if (!selectMatch) throw new Error("Syntax-Fehler: 'SELECT'-Klausel nicht gefunden.");
+        
+        let selectClause = selectMatch[1].trim();
+
+        // Prüfen, ob "DISTINCT" am Anfang steht
+        if (selectClause.toUpperCase().startsWith('DISTINCT ')) {
+            plan.distinct = true;
+            // "DISTINCT " aus der Klausel entfernen, damit der Spalten-Parser funktioniert
+            selectClause = selectClause.substring(9).trim(); // 9 ist die Länge von "DISTINCT "
+        } else {
+            plan.distinct = false;
+        }
+        
+        plan.select = parseSelectColumns(selectClause);
+
+        // 3. WHERE (unverändert)
+        const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+ORDER BY|;|$)/i);
+        if (whereMatch) {
+            plan.where = whereMatch[1].trim();
+        }
+
+        // 4. ORDER BY (unverändert)
+        const orderByMatch = query.match(/ORDER BY\s+(.+?)(?:;|$)/i);
+        if (orderByMatch) {
+            plan.orderBy = parseOrderBy(orderByMatch[1]);
+        }
+
+        return plan;
+    }
+
+    /**
+     * (NEU) Parst die Spalten-Ausdrücke aus der SELECT-Klausel.
+     * (Aus der alten handleSelect-Funktion extrahiert)
+     */
+    function parseSelectColumns(selectClause) {
+        const columnStrings = selectClause.split(',').map(c => c.trim());
+
+        if (columnStrings.length === 1 && columnStrings[0] === '*') {
+            return [{ expr: '*', alias: '*' }];
+        }
+
+        return columnStrings.map(colStr => {
+            const asMatch = colStr.match(/\s+AS\s+(["'](.+?)["']|([a-zA-Z0-9_]+))$/i);
+            if (asMatch) {
+                const expr = colStr.substring(0, asMatch.index).trim();
+                const alias = asMatch[2] || asMatch[3];
+                return { expr: expr, alias: alias };
+            } else {
+                return { expr: colStr, alias: colStr };
+            }
+        });
+    }
+
+    /**
+     * (NEU) Parst die ORDER BY-Klausel.
+     */
+    function parseOrderBy(orderByClause) {
+        const parts = orderByClause.trim().split(/\s+/);
+        // Entfernt Anführungszeichen, falls vorhanden (z.B. ORDER BY "new Age")
+        const column = parts[0].replace(/["']/g, '');
+        let direction = 'ASC';
+
+        if (parts.length > 1 && parts[1].toUpperCase() === 'DESC') {
+            direction = 'DESC';
+        }
+        return { column: column, direction: direction };
+    }
+
+
+    // --- 7. EXECUTION-PIPELINE-FUNKTIONEN (NEU) ---
+
+    /**
+     * (NEU) Führt den FROM-Teil des Plans aus.
+     */
+    function executeFrom(tableName) {
+        if (!db[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+        // WICHTIG: Eine Kopie zurückgeben, um die Originaldatenbank nicht zu ändern
+        return [...db[tableName]];
+    }
+
+    /**
+     * (NEU) Führt den WHERE-Teil des Plans aus.
+     * (Wrapper um die bestehende evaluateCondition-Funktion)
+     */
+    function executeWhere(data, whereClause) {
+        return data.filter(row => evaluateCondition(row, whereClause));
+    }
+
+    /**
+     * (NEU) Führt den SELECT-Teil des Plans aus.
+     * (Aus der alten handleSelect-Funktion extrahiert)
+     */
+    function executeSelect(data, selectPlan) {
+        // selectPlan ist ein Array, z.B. [{ expr: 'name', alias: 'name' }, { expr: 'age + 10', alias: 'old' }]
+        
+        if (selectPlan.length === 1 && selectPlan[0].expr === '*') {
+            return data;
+        }
+
+        return data.map(row => {
+            const newRow = {};
+            for (const col of selectPlan) {
+                try {
+                    const value = evaluateExpression(row, col.expr);
+                    newRow[col.alias] = value;
+                } catch (e) {
+                    throw new Error(`Fehler beim Verarbeiten von '${col.expr}': ${e.message}`);
+                }
+            }
+            return newRow;
+        });
+    }
+
+    /**
+     * (NEU) Führt den ORDER BY-Teil des Plans aus.
+     * (Logik korrigiert, um auf *finalen* Daten zu sortieren)
+     */
+    function executeOrderBy(data, orderByPlan) {
+        const { column, direction } = orderByPlan;
+        
+        return data.sort((a, b) => {
+            // WICHTIG: Prüft, ob die Spalte in den *neuen, berechneten* Daten existiert.
+            if (!a.hasOwnProperty(column) || !b.hasOwnProperty(column)) {
+                throw new Error(`Fehler: Spalte '${column}' in ORDER BY nicht gefunden. (Aliase müssen evtl. in Anführungszeichen gesetzt werden)`);
+            }
+            const valA = a[column];
+            const valB = b[column];
+
+            let comparison = 0;
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                comparison = valA - valB;
+            } else {
+                comparison = String(valA).localeCompare(String(valB));
+            }
+
+            return (direction === 'DESC') ? (comparison * -1) : comparison;
+        });
+    }
+
+
+    // --- 8. ALLGEMEINE HELPER-FUNKTIONEN (Unverändert) ---
+
+    /**
+     * (Unverändert) Wertet eine WHERE-Bedingung aus.
+     */
     function evaluateCondition(row, condition) {
         let operator;
         if (condition.includes('=')) {
@@ -291,18 +432,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * (ANGEPASST) Zeigt Ergebnisse an
-     * Kann jetzt Tabellen (von SELECT) oder Erfolgsmeldungen (von INSERT) anzeigen
+     * (Unverändert) Wertet komplexe Ausdrücke aus (z.B. "age + 10")
+     */
+    function evaluateExpression(row, expression) {
+        expression = expression.trim();
+        const colNames = Object.keys(row);
+        const values = colNames.map(col => row[col]);
+
+        try {
+            const evaluator = new Function(...colNames, `'use strict'; return ${expression};`);
+            return evaluator(...values);
+        } catch (e) {
+            throw new Error(`Ungültiger Ausdruck oder Operation: '${expression}'. JS-Fehler: ${e.message}`);
+        }
+    }
+
+    /**
+     * (Unverändert) Zeigt die Ergebnisse an.
      */
     function displayResults(result) {
-        // Fall 1: Das Ergebnis ist eine Erfolgsmeldung (z.B. von INSERT)
         if (result.message) {
             messageDiv.textContent = result.message;
-            outputDiv.innerHTML = ''; // Keine Tabelle anzeigen
+            outputDiv.innerHTML = '';
             return;
         }
 
-        // Fall 2: Das Ergebnis ist ein Array (von SELECT)
         if (Array.isArray(result)) {
             if (result.length === 0) {
                 messageDiv.textContent = 'Abfrage erfolgreich ausgeführt. 0 Zeilen zurückgegeben.';
@@ -310,8 +464,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             messageDiv.textContent = `Abfrage erfolgreich ausgeführt. ${result.length} Zeilen zurückgegeben.`;
-
-            // Tabelle erstellen
             const table = document.createElement('table');
             const thead = table.createTHead();
             const headerRow = thead.insertRow();
@@ -330,12 +482,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     cell.textContent = rowData[header];
                 });
             });
-
             outputDiv.appendChild(table);
         }
     }
 
-    // Zeigt eine Fehlermeldung an
+/**
+     * (NEU) Führt den DISTINCT-Teil des Plans aus.
+     * Filtert doppelte Zeilen (als Objekte) heraus.
+     */
+    function executeDistinct(data) {
+        // Wir nutzen ein Set, um gesehene Zeilen zu speichern
+        const seen = new Set();
+        
+        return data.filter(row => {
+            // Wir wandeln das Zeilen-Objekt in einen String um,
+            // da Objekte nicht direkt in einem Set verglichen werden können.
+            const rowString = JSON.stringify(row);
+            
+            if (!seen.has(rowString)) {
+                seen.add(rowString);
+                return true; // Diese Zeile ist neu, wir behalten sie
+            }
+            return false; // Diese Zeile ist ein Duplikat, wir filtern sie raus
+        });
+    }
+    
     function displayError(message) {
         outputDiv.innerHTML = `<div class="error">${message}</div>`;
     }
