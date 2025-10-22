@@ -255,6 +255,10 @@ document.addEventListener('DOMContentLoaded', () => {
      * (STARK ÜBERARBEITET) Zerlegt die SELECT-Abfrage in ihre Teile (den "Plan").
      * Erkennt jetzt JOIN-Klauseln.
      */
+    /**
+     * (STARK ÜBERARBEITET) Zerlegt die SELECT-Abfrage in ihre Teile (den "Plan").
+     * Erkennt jetzt JOIN, DISTINCT, TOP und LIMIT.
+     */
     function buildQueryPlan(query) {
         const plan = {
             limit: null,
@@ -264,30 +268,25 @@ document.addEventListener('DOMContentLoaded', () => {
             orderBy: null
         };
 
-        // 1. FROM und JOINs
-        // Regex für: FROM table1 [INNER] JOIN table2 ON ... [INNER] JOIN table3 ON ...
+        // 1. FROM und JOINs (unverändert)
         const fromMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)((?:\s+(?:INNER\s+)?JOIN\s+[a-zA-Z0-9_]+\s+ON\s+.+?)+)/i);
         if (fromMatch) {
-            // --- Fall 1: FROM mit JOINs ---
-            plan.from = fromMatch[1]; // Basistabelle (z.B. "users")
-            
-            // Regex, um jeden einzelnen JOIN-Teil zu finden
+            plan.from = fromMatch[1];
             const joinRegex = /(?:INNER\s+)?JOIN\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_\.]+\s*=\s*[a-zA-Z0-9_\.]+)/gi;
             let joinMatch;
             while ((joinMatch = joinRegex.exec(fromMatch[2])) !== null) {
                 plan.joins.push({
-                    table: joinMatch[1], // z.B. "orders"
-                    on: joinMatch[2]     // z.B. "users.id = orders.user_id"
+                    table: joinMatch[1],
+                    on: joinMatch[2]
                 });
             }
         } else {
-            // --- Fall 2: Nur FROM (keine JOINs) ---
             const simpleFromMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)/i);
             if (!simpleFromMatch) throw new Error("Syntax-Fehler: 'FROM'-Klausel nicht gefunden.");
             plan.from = simpleFromMatch[1];
         }
 
-        // 2. SELECT (unverändert)
+        // 2. SELECT (unverändert, parst weiterhin 'TOP')
         const selectMatch = query.match(/SELECT\s+(.+?)\s+FROM/i);
         if (!selectMatch) throw new Error("Syntax-Fehler: 'SELECT'-Klausel nicht gefunden.");
         let selectClause = selectMatch[1].trim();
@@ -299,19 +298,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const topMatch = selectClause.match(/^TOP\s+([0-9]+)\s+/i);
         if (topMatch) {
-            plan.limit = parseInt(topMatch[1]);
+            plan.limit = parseInt(topMatch[1]); // 'TOP' setzt plan.limit
             selectClause = selectClause.substring(topMatch[0].length).trim();
         }
         
-        plan.select = parseSelectColumns(selectClause); // unverändert
+        plan.select = parseSelectColumns(selectClause);
 
-        // 3. WHERE (unverändert)
-        const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+ORDER BY|;|$)/i);
+        // 3. WHERE (AKTUALISIERT: Stoppt jetzt auch bei LIMIT)
+        const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|;|$)/i);
         if (whereMatch) plan.where = whereMatch[1].trim();
 
-        // 4. ORDER BY (unverändert)
-        const orderByMatch = query.match(/ORDER BY\s+(.+?)(?:;|$)/i);
+        // 4. ORDER BY (AKTUALISIERT: Stoppt jetzt auch bei LIMIT)
+        const orderByMatch = query.match(/ORDER BY\s+(.+?)(?:\s+LIMIT|;|$)/i);
         if (orderByMatch) plan.orderBy = parseOrderBy(orderByMatch[1]);
+
+        // 5. LIMIT (NEUE REGEL)
+        // Sucht nach 'LIMIT <n>' ganz am Ende
+        const limitMatch = query.match(/LIMIT\s+([0-9]+)\s*;?$/i);
+        if (limitMatch) {
+            const limitValue = parseInt(limitMatch[1]);
+            if (plan.limit !== null) {
+                // Fehler, wenn 'TOP' bereits 'plan.limit' gesetzt hat
+                throw new Error("Syntax-Fehler: Es können nicht 'TOP' und 'LIMIT' gleichzeitig verwendet werden.");
+            }
+            plan.limit = limitValue; // 'LIMIT' setzt plan.limit
+        }
 
         return plan;
     }
