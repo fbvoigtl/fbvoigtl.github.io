@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const db = {
         users: [
             { id: 1, name: 'Alice', age: 25, city: 'London', status: 'active' },
-            { id: 2, name: 'Bob', age: 32, city: 'Paris', status: 'active' },
+            { id: 2, name: 'Bob', age: 32, city: null, status: 'active' },
             { id: 3, name: 'Charlie', age: 28, city: 'New York', status: 'inactive' },
             { id: 4, name: 'David', age: 45, city: 'London', status: 'active' },
             { id: 5, name: 'Eve', age: 32, city: 'Tokyo', status: 'active' },
@@ -105,6 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 4. DER KERN: DER "DISPATCHER" ---
     // Dieser bleibt schlank und leitet nur weiter.
+// --- 4. DER KERN: DER "DISPATCHER" ---
+    // --- 4. DER KERN: DER "DISPATCHER" ---
     function parseAndExecute(query) {
         const normalizedQuery = query.replace(/\s+/g, ' ').trim();
         const upperQuery = normalizedQuery.toUpperCase();
@@ -121,14 +123,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return handleInsert(normalizedQuery);
         }
         
-        // if (upperQuery.startsWith('UPDATE ')) {
-        //     return handleUpdate(normalizedQuery);
-        // }
-        // if (upperQuery.startsWith('DELETE FROM ')) {
-        //     return handleDelete(normalizedQuery);
-        // }
+        if (upperQuery.startsWith('UPDATE ')) {
+            return handleUpdate(normalizedQuery);
+        }
 
-        throw new Error(`Syntax-Fehler: Nicht unterstützter Befehlstyp. Beginne mit SELECT oder INSERT INTO.`);
+        // --- NEUER BLOCK HINZUFÜGEN ---
+        if (upperQuery.startsWith('DELETE FROM ')) {
+            return handleDelete(normalizedQuery);
+        }
+        // --- ENDE DES NEUEN BLOCKS ---
+
+        throw new Error(`Syntax-Fehler: Nicht unterstützter Befehlstyp. Beginne mit SELECT, INSERT INTO, UPDATE oder DELETE FROM.`);
     }
 
     // --- 5. BEFEHLS-HANDLER ---
@@ -136,51 +141,88 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Verarbeitet INSERT-Abfragen (unverändert)
      */
+    /**
+     * (AKTUALISIERT) Verarbeitet INSERT-Abfragen
+     * Unterstützt: INSERT INTO table (col1) VALUES (val1)
+     * UND         INSERT INTO table VALUES (val1_für_alle_cols)
+     */
     function handleInsert(query) {
-        const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)\s*\((.+?)\)\s+VALUES\s*\((.+?)\);/i;
+        // (NEUE REGEX) Die Spaltenliste (Gruppe 2) ist jetzt optional
+        const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)(?:\s*\((.+?)\))?\s+VALUES\s*\((.+?)\);/i;
         const match = query.match(insertRegex);
 
         if (!match) {
-            throw new Error('Ungültige INSERT-Syntax. Erwartet: INSERT INTO tabelle (spalte1, spalte2) VALUES (wert1, wert2);');
+            throw new Error('Ungültige INSERT-Syntax. Erwartet: INSERT INTO tabelle (spalten) VALUES (werte) ODER INSERT INTO tabelle VALUES (werte);');
         }
-        
+
+        // colStr (match[2]) ist jetzt 'undefined', wenn keine Spalten angegeben wurden
         const [_, tableName, colStr, valStr] = match;
 
         if (!db[tableName]) {
             throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
         }
 
-        const columns = colStr.split(',').map(c => c.trim());
         const values = valStr.split(',').map(v => v.trim());
+        let columns;
 
-        if (columns.length !== values.length) {
-            throw new Error(`Fehler: Die Anzahl der Spalten (${columns.length}) stimmt nicht mit der Anzahl der Werte (${values.length}) überein.`);
+        if (colStr) {
+            // --- FALL 1: Spalten wurden angegeben (ALTER CODE) ---
+            columns = colStr.split(',').map(c => c.trim());
+            
+            // Validierung: Existieren die angegebenen Spalten?
+            if (db[tableName].length > 0) {
+                const firstRow = db[tableName][0];
+                for (const col of columns) {
+                    if (!firstRow.hasOwnProperty(col)) {
+                        throw new Error(`Fehler: Spalte '${col}' existiert nicht in Tabelle '${tableName}'.`);
+                    }
+                }
+            }
+        } else {
+            // --- FALL 2: Spalten wurden NICHT angegeben (NEUER CODE) ---
+            if (db[tableName].length === 0) {
+                // Wir können die Struktur nicht erraten, wenn die Tabelle leer ist
+                throw new Error(`Fehler: INSERT ohne Spaltenliste in eine leere Tabelle nicht möglich (Struktur unbekannt).`);
+            }
+            // Wir nehmen an, dass die Werte FÜR ALLE Spalten in der richtigen Reihenfolge geliefert werden
+            columns = Object.keys(db[tableName][0]);
         }
 
+        // --- Gemeinsame Logik ab hier ---
+        
+        // Prüfen, ob die Anzahl der Spalten und Werte übereinstimmt
+        if (columns.length !== values.length) {
+            if (colStr) {
+                // Alter Fehler
+                throw new Error(`Fehler: Die Anzahl der Spalten (${columns.length}) stimmt nicht mit der Anzahl der Werte (${values.length}) überein.`);
+            } else {
+                // Neuer, spezifischerer Fehler
+                throw new Error(`Fehler: Die Anzahl der Werte (${values.length}) stimmt nicht mit der Tabellenstruktur (${columns.length} Spalten) überein.`);
+            }
+        }
+
+        // Neue Zeile erstellen (unverändert)
         const newRow = {};
         for (let i = 0; i < columns.length; i++) {
             const col = columns[i];
             const valStr = values[i];
+            
             let parsedValue;
-            const cleanedValStr = valStr.replace(/['"]/g, '');
+            const cleanedValStr = valStr.replace(/['"]/g, ''); // Anführungszeichen entfernen
+
             if (!isNaN(parseFloat(cleanedValStr)) && isFinite(cleanedValStr)) {
-                parsedValue = parseFloat(cleanedValStr);
+                parsedValue = parseFloat(cleanedValStr); // Ist eine Zahl
             } else {
-                parsedValue = cleanedValStr;
+                parsedValue = cleanedValStr; // Ist ein String
             }
+
             newRow[col] = parsedValue;
         }
 
-        if (db[tableName].length > 0) {
-            const firstRow = db[tableName][0];
-            for (const col of columns) {
-                if (!firstRow.hasOwnProperty(col)) {
-                    throw new Error(`Fehler: Spalte '${col}' existiert nicht in Tabelle '${tableName}'.`);
-                }
-            }
-        }
-
+        // Neue Zeile hinzufügen (unverändert)
         db[tableName].push(newRow);
+
+        // Erfolgsmeldung (unverändert)
         return { message: `1 Zeile erfolgreich in '${tableName}' eingefügt.` };
     }
 
@@ -327,67 +369,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return [...db[tableName]];
     }
 
-    /**
-     * (NEU) Führt den WHERE-Teil des Plans aus.
-     * (Wrapper um die bestehende evaluateCondition-Funktion)
-     */
-/**
-     * (AKTUALISIERT) Führt den WHERE-Teil des Plans aus.
-     * Unterstützt jetzt mehrere 'AND'-Bedingungen.
-     */
-/**
-     * (AKTUALISIERT) Führt den WHERE-Teil des Plans aus.
-     * Unterstützt jetzt 'AND'- und 'OR'-Bedingungen.
-     * (Priorität: AND wird VOR OR ausgewertet)
-     */
-    /**
-     * (AKTUALISIERT) Führt den WHERE-Teil des Plans aus.
-     * Unterstützt AND/OR, entfernt Klammern UND
-     * unterstützt 'NOT' vor einer Bedingung.
-     */
-    function executeWhere(data, whereClause) {
-        // Entfernt alle Klammern, um den einfachen Split-Parser nicht zu verwirren.
-        const cleanClause = whereClause.replace(/[()]/g, ''); 
 
-        // 1. Teile bei "OR" auf
-        const orGroups = cleanClause.split(/ OR /i).map(c => c.trim());
+    function executeWhere(data, whereClause) {
+        
+        // 1. Übersetze die SQL-Bedingung in eine JS-Bedingung
+        const jsClause = convertSqlWhereToJs(whereClause);
 
         // 2. Filtere die Daten
         return data.filter(row => {
-            
-            // 3. Prüfe, ob IRGENDEINE OR-Gruppe wahr ist
-            return orGroups.some(andGroupStr => {
-                
-                // 4. Innerhalb jeder OR-Gruppe, teile bei "AND"
-                const andConditions = andGroupStr.split(/ AND /i).map(c => c.trim());
-                
-                // 5. Prüfe, ob ALLE AND-Bedingungen wahr sind
-                return andConditions.every(originalConditionStr => {
-                    let conditionStr = originalConditionStr;
-                    let isNegated = false; // Flag für NOT
-
-                    // --- HIER IST DIE NEUE LOGIK ---
-                    // Prüfen, ob die Bedingung mit NOT beginnt (Groß/Kleinschreibung egal)
-                    if (conditionStr.toUpperCase().startsWith('NOT ')) {
-                        isNegated = true;
-                        // "NOT " (4 Zeichen) von der Bedingung entfernen
-                        conditionStr = conditionStr.substring(4).trim();
-                    }
-                    // --- ENDE DER NEUEN LOGIK ---
-
-                    try {
-                        // Bewerte die *saubere* Bedingung (z.B. "age > 20")
-                        const result = evaluateCondition(row, conditionStr);
-                        
-                        // Wenn 'NOT' davor stand, kehre das Ergebnis um
-                        // ansonsten gib das normale Ergebnis zurück
-                        return isNegated ? !result : result;
-
-                    } catch (e) {
-                        throw new Error(`Fehler in der WHERE-Klausel bei '${originalConditionStr}': ${e.message}`);
-                    }
-                });
-            });
+            try {
+                // 3. Führe die JS-Bedingung für JEDE Zeile in der Sandbox aus
+                // evaluateExpression ist unsere `new Function(...)`-Sandbox
+                return evaluateExpression(row, jsClause);
+            } catch (e) {
+                throw new Error(`Fehler beim Auswerten der WHERE-Klausel '${jsClause}': ${e.message}`);
+            }
         });
     }
     /**
@@ -413,6 +409,57 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return newRow;
         });
+    }
+    /**
+     * (NEUE FUNKTION) Übersetzt eine SQL WHERE-Klausel in einen JS-Boolean-Ausdruck.
+     */
+ /**
+     * (AKTUALISIERT) Übersetzt eine SQL WHERE-Klausel in einen JS-Boolean-Ausdruck.
+     * Verwendet jetzt Wortgrenzen (\b), um AND/OR/NOT korrekt zu erkennen.
+     */
+    /**
+     * (AKTUALISIERT) Übersetzt eine SQL WHERE-Klausel in einen JS-Boolean-Ausdruck.
+     * Erkennt jetzt IS NULL und IS NOT NULL.
+     */
+    function convertSqlWhereToJs(clause) {
+        let jsClause = clause;
+
+        // --- HIER IST DIE NEUE LOGIK ---
+        // WICHTIG: Diese Regeln müssen VOR den anderen laufen.
+        
+        // Wandle 'col IS NOT NULL' in 'col != null' um
+        jsClause = jsClause.replace(/\b([a-zA-Z0-9_]+)\s+IS\s+NOT\s+NULL\b/gi, (match, col) => {
+            return `${col} != null`; // JS-Prüfung auf nicht-null/undefined
+        });
+
+        // Wandle 'col IS NULL' in 'col == null' um
+        jsClause = jsClause.replace(/\b([a-zA-Z0-9_]+)\s+IS\s+NULL\b/gi, (match, col) => {
+            return `${col} == null`; // JS-Prüfung auf null/undefined
+        });
+        // --- ENDE DER NEUEN LOGIK ---
+
+        // Alte Regeln (unverändert)
+        jsClause = jsClause
+            .replace(/\bAND\b/gi, ' && ')  // 'AND' -> '&&'
+            .replace(/\bOR\b/gi, ' || ')   // 'OR'  -> '||'
+            .replace(/\bNOT\b/gi, ' ! ');  // 'NOT' -> '!'
+
+        // Übersetze Vergleiche mit Zahlen (unverändert)
+        jsClause = jsClause.replace(/([a-zA-Z0-9_]+)\s*(=|>|<)\s*([0-9\.]+)/g, (match, col, op, num) => {
+            const jsOp = (op === '=') ? '==' : op;
+            return `${col} ${jsOp} ${num}`;
+        });
+
+        // Übersetze Vergleiche mit Strings (unverändert)
+        jsClause = jsClause.replace(/([a-zA-Z0-9_]+)\s*(=|>|<)\s*(["'](.*?)["'])/g, (match, col, op, strLit, strVal) => {
+            if (op === '=') {
+                return `(String(${col}).toLowerCase() == ${strLit.toLowerCase()})`;
+            } else {
+                return `(String(${col}).toLowerCase() ${op} ${strLit.toLowerCase()})`;
+            }
+        });
+
+        return jsClause;
     }
 
     /**
@@ -442,49 +489,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // --- 8. ALLGEMEINE HELPER-FUNKTIONEN (Unverändert) ---
-
-    /**
-     * (Unverändert) Wertet eine WHERE-Bedingung aus.
-     */
-    function evaluateCondition(row, condition) {
-        let operator;
-        if (condition.includes('=')) {
-            operator = '=';
-        } else if (condition.includes('>')) {
-            operator = '>';
-        } else if (condition.includes('<')) {
-            operator = '<';
-        } else {
-            throw new Error(`Unsupported WHERE condition: '${condition}'. Only '=', '>', '<' are supported.`);
-        }
-
-        const [colName, valStr] = condition.split(operator).map(s => s.trim());
-        
-        if (!row.hasOwnProperty(colName)) {
-            throw new Error(`Column '${colName}' not found in WHERE clause.`);
-        }
-
-        const rowValue = row[colName];
-        const compareValueStr = valStr.replace(/['"]/g, '');
-        let compareValue;
-        if (!isNaN(parseFloat(compareValueStr)) && isFinite(compareValueStr)) {
-            compareValue = parseFloat(compareValueStr);
-        } else {
-            compareValue = compareValueStr;
-        }
-        
-        switch (operator) {
-            case '=':
-                return rowValue == compareValue;
-            case '>':
-                return rowValue > compareValue;
-            case '<':
-                return rowValue < compareValue;
-            default:
-                return false;
-        }
-    }
 
     /**
      * (Unverändert) Wertet komplexe Ausdrücke aus (z.B. "age + 10")
@@ -562,6 +566,141 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function handleUpdate(query) {
+        // 1. PARSING: Abfrage in einen "Plan" umwandeln
+        const plan = buildUpdatePlan(query);
+
+        // 2. EXECUTION: Die Pipeline ausführen
+        const updateCount = executeUpdate(plan);
+        
+        // 3. Ergebnis zurückgeben
+        return { message: `${updateCount} Zeile(n) erfolgreich aktualisiert.` };
+    }
+
+    function buildUpdatePlan(query) {
+        const plan = {};
+
+        // 1. UPDATE (Tabelle finden)
+        const updateMatch = query.match(/UPDATE\s+([a-zA-Z0-9_]+)\s+SET/i);
+        if (!updateMatch) throw new Error("Syntax-Fehler: 'UPDATE table SET' nicht gefunden.");
+        plan.table = updateMatch[1];
+
+        // 2. SET (Werte finden)
+        const setMatch = query.match(/SET\s+(.+?)(?:\s+WHERE|;|$)/i);
+        if (!setMatch) throw new Error("Syntax-Fehler: 'SET'-Klausel nicht gefunden.");
+        
+        plan.setClauses = setMatch[1].split(',').map(clause => {
+            const parts = clause.split('=');
+            if (parts.length !== 2) throw new Error(`Syntax-Fehler in SET-Klausel: '${clause}'`);
+            
+            const column = parts[0].trim();
+            const valueStr = parts[1].trim();
+            
+            // Wert parsen (String oder Zahl)
+            let value;
+            const cleanedValStr = valueStr.replace(/['"]/g, ''); // Anführungszeichen entfernen
+
+            if (!isNaN(parseFloat(cleanedValStr)) && isFinite(cleanedValStr)) {
+                value = parseFloat(cleanedValStr); // Ist eine Zahl
+            } else {
+                value = cleanedValStr; // Ist ein String
+            }
+            
+            return { column, value };
+        });
+
+        // 3. WHERE (optional)
+        const whereMatch = query.match(/WHERE\s+(.+?);?$/i);
+        if (whereMatch) {
+            plan.where = whereMatch[1].trim();
+        }
+
+        return plan;
+    }
+
+    /**
+     * (NEU) Führt den UPDATE-Plan aus.
+     */
+    function executeUpdate(plan) {
+        const tableName = plan.table;
+        if (!db[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+
+        let updateCount = 0;
+        
+        // Iteriere über das Original-Array in der 'db'-Variable
+        db[tableName].forEach(row => {
+            
+            // 1. Prüfe, ob die Zeile die WHERE-Bedingung erfüllt
+            let matchesWhere = true; // Standard ist true, falls keine WHERE-Klausel vorhanden ist
+            
+            if (plan.where) {
+                // ** WIR VERWENDEN UNSERE ALTE WHERE-LOGIK WIEDER! **
+                // executeWhere erwartet ein Array, also [row].
+                // Wenn das Ergebnis-Array > 0 ist, hat die Zeile gematcht.
+                matchesWhere = executeWhere([row], plan.where).length > 0;
+            }
+            
+            // 2. Wenn sie matcht, wende die Updates an
+            if (matchesWhere) {
+                updateCount++;
+                
+                // Wende alle SET-Klauseln auf diese Zeile an
+                plan.setClauses.forEach(clause => {
+                    const { column, value } = clause;
+                    if (!row.hasOwnProperty(column)) {
+                        throw new Error(`Fehler: Spalte '${column}' in Tabelle '${tableName}' nicht gefunden.`);
+                    }
+                    // Aktualisiere den Wert direkt in der 'db'-Variable
+                    row[column] = value;
+                });
+            }
+        });
+
+        return updateCount;
+    }
+
+    function handleDelete(query) {
+        // 1. PARSING: Abfrage in einen "Plan" umwandeln
+        const plan = buildDeletePlan(query);
+
+        // 2. EXECUTION: Die Pipeline ausführen
+        const deleteCount = executeDelete(plan);
+        
+        // 3. Ergebnis zurückgeben
+        return { message: `${deleteCount} Zeile(n) erfolgreich gelöscht.` };
+    }
+
+    function executeDelete(plan) {
+        const tableName = plan.table;
+        if (!db[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+
+        const originalLength = db[tableName].length;
+        let rowsToKeep;
+
+        if (plan.where) {
+            // FALL 1: Es gibt eine WHERE-Klausel.
+            // Behalte nur die Zeilen, die NICHT der Bedingung entsprechen.
+            rowsToKeep = db[tableName].filter(row => {
+                // Wir nutzen executeWhere, um zu sehen, ob die Zeile matcht
+                const matchesWhere = executeWhere([row], plan.where).length > 0;
+                return !matchesWhere; // Behalte Zeile, wenn sie NICHT matcht
+            });
+        } else {
+            // FALL 2: Es gibt KEINE WHERE-Klausel. Lösche alles.
+            rowsToKeep = [];
+        }
+
+        // Aktualisiere die Originaldatenbank
+        db[tableName] = rowsToKeep;
+
+        // Berechne, wie viele Zeilen gelöscht wurden
+        const deleteCount = originalLength - rowsToKeep.length;
+        return deleteCount;
+    }
     function displayError(message) {
         outputDiv.innerHTML = `<div class="error">${message}</div>`;
     }
