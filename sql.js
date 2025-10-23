@@ -474,12 +474,19 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * (STARK ÜBERARBEITET) Führt den SELECT-Teil aus.
      */
+    /**
+     * (AKTUALISIERT) Führt den SELECT-Teil aus.
+     * `SELECT *` entfernt jetzt Präfixe bei Abfragen ohne JOIN.
+     */
     function executeSelect(data, selectPlan, allColumns) {
+        // selectPlan ist z.B. [{ func: 'MIN', expr: 'Price', alias: 'MIN(Price)' }]
+        
         // 1. Prüfen, ob *irgendeine* Spalte eine Aggregatfunktion ist
         const isAggregateQuery = selectPlan.some(col => col.func);
 
         if (isAggregateQuery) {
             // --- FALL 1: AGGREGATION ---
+            // (Unverändert)
             const isPureAggregate = selectPlan.every(col => col.func);
             if (!isPureAggregate) {
                 const nonAggCol = selectPlan.find(col => !col.func).expr;
@@ -494,10 +501,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } else {
             // --- FALL 2: PROJEKTION ---
+            
             if (selectPlan.length === 1 && selectPlan[0].expr === '*') {
+                // --- HIER IST DIE NEUE LOGIK FÜR SELECT * ---
+                
+                // Finde alle einzigartigen Präfixe (Tabellennamen) in den Spalten
+                const prefixes = new Set(allColumns.map(col => col.split('.')[0]));
+                
+                if (prefixes.size === 1) {
+                    // Nur eine Tabelle beteiligt (kein JOIN).
+                    // Entferne die Präfixe für eine saubere Ausgabe.
+                    return data.map(row => unPrefixColumns(row));
+                }
+                
+                // Mehrere Tabellen (JOIN) beteiligt. Behalte die Präfixe.
                 return data;
+                // --- ENDE DER NEUEN LOGIK ---
             }
 
+            // (Code für SELECT col1, col2 ... - unverändert)
             return data.map(row => {
                 const newRow = {};
                 for (const col of selectPlan) {
@@ -555,6 +577,10 @@ document.addEventListener('DOMContentLoaded', () => {
      * (AKTUALISIERT) Führt den UPDATE-Plan aus.
      * Präfixt jetzt Zeilen für 'executeWhere' korrekt.
      */
+    /**
+     * (KORRIGIERT) Führt den UPDATE-Plan aus.
+     * Entfernt die fehlerhafte 'hasOwnProperty'-Prüfung.
+     */
     function executeUpdate(plan, allColumns) { // allColumns ist jetzt präfixiert
         const tableName = plan.table;
         if (!db[tableName]) {
@@ -563,16 +589,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let updateCount = 0;
         
-        // Wir iterieren über das Original-DB-Array, um es zu ändern
         db[tableName].forEach(row => {
             
             let matchesWhere = true;
             
             if (plan.where) {
-                // 1. Präfixe die *aktuelle* Zeile für den Test
                 const prefixedRow = prefixColumns(tableName, row);
-                
-                // 2. Teste die präfixierte Zeile mit der WHERE-Logik
                 matchesWhere = executeWhere([prefixedRow], plan.where, allColumns).length > 0;
             }
             
@@ -582,17 +604,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 plan.setClauses.forEach(clause => {
                     const { column, value } = clause;
                     
-                    // 3. Löse den Spaltennamen auf (z.B. 'city' -> 'users.city')
+                    // 1. Löse den Spaltennamen auf (z.B. 'id' -> 'users.id')
+                    // Dies ist unsere *eigentliche* Überprüfung, ob die Spalte in der Tabelle existiert.
                     const resolvedCol = resolveColumnName(column, allColumns);
                     
-                    // 4. Hole den *rohen* Spaltennamen (z.B. 'users.city' -> 'city')
+                    // 2. Hole den *rohen* Spaltennamen (z.B. 'users.id' -> 'id')
                     const rawCol = resolvedCol.split('.')[1] || resolvedCol; 
                     
-                    if (!row.hasOwnProperty(rawCol)) {
-                        throw new Error(`Fehler: Spalte '${column}' in Tabelle '${tableName}' nicht gefunden.`);
-                    }
+                    // --- FEHLERHAFTE PRÜFUNG ENTFERNT ---
+                    // Die 'if (!row.hasOwnProperty(rawCol))' Prüfung wurde entfernt.
+                    // 'resolveColumnName' hat bereits bestätigt, dass die Spalte 'id'
+                    // zur Tabelle 'users' gehört.
                     
-                    // 5. Aktualisiere die *Originalzeile*
+                    // 3. Aktualisiere/Setze den Wert in der Originalzeile
                     row[rawCol] = value;
                 });
             }
@@ -705,6 +729,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * (STARK ÜBERARBEITET) Übersetzt SQL WHERE in JS.
+     */
+    /**
+     * (AKTUALISIERT) Übersetzt SQL WHERE in JS.
+     * Erkennt jetzt alle Vergleiche: >=, <=, !=, <>
      */
     /**
      * (AKTUALISIERT) Übersetzt SQL WHERE in JS.
@@ -841,6 +869,18 @@ document.addEventListener('DOMContentLoaded', () => {
             default:
                 throw new Error(`Unbekannte Aggregatfunktion: ${funcName}`);
         }
+    }
+    /**
+     * (NEU) Wandelt eine präfixierte Zeile zurück: { "users.id": 1 } -> { id: 1 }
+     */
+    function unPrefixColumns(row) {
+        const newRow = {};
+        for (const key in row) {
+            // "users.id" -> "id"
+            // "id" (ohne Punkt) -> "id"
+            newRow[key.split('.')[1] || key] = row[key];
+        }
+        return newRow;
     }
     
     // (displayResults, displayError sind unverändert)
