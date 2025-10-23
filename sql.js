@@ -2,28 +2,17 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. MOCK DATABASE ---
+    // Angepasst für bessere JOIN-Beispiele
     const db = {
         users: [
             { id: 1, name: 'Alice', age: 25, city: 'London', status: 'active' },
             { id: 2, name: 'Bob', age: 32, city: 'Paris', status: 'active' },
-            { id: 3, name: 'Charlie', age: 28, city: null, status: 'inactive' },
+            { id: 3, name: 'Charlie', age: 28, city: null, status: 'inactive' }, // Hat Stadt NULL, aber eine Bestellung
             { id: 4, name: 'David', age: 45, city: 'London', status: 'active' },
             { id: 5, name: 'Eve', age: 32, city: 'Tokyo', status: 'active' },
-            { id: 6, name: 'Frank', age: 19, city: 'Paris', status: 'active' },
-            { id: 7, name: 'Grace', age: 51, city: 'New York', status: 'active' },
-            { id: 8, name: 'Henry', age: 40, city: 'Berlin', status: 'active' },
-            { id: 9, name: 'Ivy', age: 22, city: 'London', status: 'inactive' },
+            { id: 8, name: 'Henry', age: 40, city: 'Berlin', status: 'active' }, // Hat mehrere Bestellungen
             { id: 10, name: 'Jack', age: 28, city: 'Berlin', status: 'active' },
-            { id: 11, name: 'Kate', age: 65, city: 'Sydney', status: 'active' },
-            { id: 12, name: 'Leo', age: 30, city: 'Tokyo', status: 'active' },
-            { id: 13, name: 'Mia', age: 29, city: 'Paris', status: 'active' },
-            { id: 14, name: 'Noah', age: 42, city: 'Berlin', status: 'inactive' },
-            { id: 15, name: 'Olivia', age: 22, city: 'New York', status: 'active' },
-            { id: 16, name: 'Peter', age: 55, city: 'London', status: 'active' },
-            { id: 17, name: 'Quinn', age: 38, city: 'Sydney', status: 'active' },
-            { id: 18, name: 'Rachel', age: 27, city: 'Paris', status: 'active' },
-            { id: 19, name: 'Sam', age: 33, city: 'Tokyo', status: 'active' },
-            { id: 20, name: 'Tom', age: 48, city: 'Berlin', status: 'active' },
+            { id: 21, name: 'Zoe', age: 29, city: 'Sydney', status: 'active' } // Neuer User OHNE Bestellungen
         ],
         products: [
             { id: 101, name: 'Laptop', category: 'Electronics', price: 1200, stock: 15 },
@@ -31,48 +20,25 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 103, name: 'Book: SQL Basics', category: 'Media', price: 20, stock: 75 },
             { id: 104, name: 'Headphones', category: 'Electronics', price: 150, stock: 30 },
             { id: 105, name: 'Smartphone', category: 'Electronics', price: 700, stock: 25 },
-            { id: 106, name: 'Keyboard', category: 'Electronics', price: 80, stock: 50 },
-            { id: 107, name: 'Mouse', category: 'Electronics', price: 40, stock: 65 },
             { id: 108, name: 'T-Shirt', category: 'Apparel', price: 25, stock: 200 },
-            { id: 109, name: 'Running Shoes', category: 'Apparel', price: 90, stock: 80 },
-            { id: 110, name: 'Desk Chair', category: 'Homeware', price: 180, stock: 10 },
-            { id: 111, name: 'Monitor', category: 'Electronics', price: 300, stock: 22 },
-            { id: 112, name: 'USB-C Cable', category: 'Electronics', price: 12, stock: 150 },
-            { id: 113, name: 'Notebook', category: 'Stationery', price: 5, stock: 300 },
-            { id: 114, name: 'Pen Set', category: 'Stationery', price: 8, stock: 250 },
-            { id: 115, name: 'Backpack', category: 'Apparel', price: 50, stock: 40 },
-            { id: 116, name: 'Book: Advanced JS', category: 'Media', price: 45, stock: 50 },
-            { id: 117, name: 'Desk Lamp', category: 'Homeware', price: 35, stock: 0 },
-            { id: 118, name: 'Smartwatch', category: 'Electronics', price: 250, stock: 30 },
-            { id: 119, name: 'Water Bottle', category: 'Homeware', price: 22, stock: 90 },
-            { id: 120, name: 'Yoga Mat', category: 'Sports', price: 30, stock: 60 },
+            { id: 121, name: 'Wireless Charger', category: 'Electronics', price: 45, stock: 50 } // Neues Produkt OHNE Bestellungen
         ],
         orders: [
-            { order_id: 501, user_id: 1, product_id: 101, quantity: 1, order_date: '2023-01-15' },
-            { order_id: 502, user_id: 2, product_id: 103, quantity: 3, order_date: '2023-01-17' },
-            { order_id: 503, user_id: 1, product_id: 102, quantity: 2, order_date: '2023-01-20' },
-            { order_id: 504, user_id: 3, product_id: 105, quantity: 1, order_date: '2023-02-01' },
-            { order_id: 505, user_id: 5, product_id: 108, quantity: 5, order_date: '2023-02-05' },
-            { order_id: 506, user_id: 8, product_id: 104, quantity: 1, order_date: '2023-02-07' },
-            { order_id: 507, user_id: 8, product_id: 107, quantity: 1, order_date: '2023-02-07' },
-            { order_id: 508, user_id: 10, product_id: 113, quantity: 10, order_date: '2023-02-12' },
-            { order_id: 509, user_id: 15, product_id: 109, quantity: 1, order_date: '2023-02-15' },
-            { order_id: 510, user_id: 18, product_id: 102, quantity: 1, order_date: '2023-02-20' },
-            { order_id: 511, user_id: 20, product_id: 111, quantity: 2, order_date: '2023-02-21' },
-            { order_id: 512, user_id: 1, product_id: 115, quantity: 1, order_date: '2023-03-01' },
-            { order_id: 513, user_id: 4, product_id: 110, quantity: 1, order_date: '2023-03-02' },
-            { order_id: 514, user_id: 7, product_id: 120, quantity: 1, order_date: '2023-03-05' },
-            { order_id: 515, user_id: 19, product_id: 118, quantity: 1, order_date: '2023-03-10' },
-            { order_id: 516, user_id: 12, product_id: 105, quantity: 1, order_date: '2023-03-11' },
-            { order_id: 517, user_id: 2, product_id: 116, quantity: 1, order_date: '2023-03-12' },
-            { order_id: 518, user_id: 10, product_id: 114, quantity: 2, order_date: '2023-03-15' },
-            { order_id: 519, user_id: 5, product_id: 102, quantity: 4, order_date: '2023-03-18' },
-            { order_id: 520, user_id: 8, product_id: 106, quantity: 1, order_date: '2023-03-20' },
-            { order_id: 521, user_id: 16, product_id: 119, quantity: 2, order_date: '2023-03-21' },
-            { order_id: 522, user_id: 17, product_id: 117, quantity: 1, order_date: '2023-03-22' },
-            { order_id: 523, user_id: 13, product_id: 108, quantity: 3, order_date: '2023-03-25' },
-            { order_id: 524, user_id: 4, product_id: 101, quantity: 1, order_date: '2023-04-01' },
-            { order_id: 525, user_id: 7, product_id: 112, quantity: 5, order_date: '2023-04-02' },
+            // Bestellungen, die auf existierende User/Produkte verweisen
+            { order_id: 501, user_id: 1, product_id: 101, quantity: 1, order_date: '2023-01-15' }, // Alice kauft Laptop
+            { order_id: 502, user_id: 2, product_id: 103, quantity: 3, order_date: '2023-01-17' }, // Bob kauft 3 Bücher
+            { order_id: 503, user_id: 1, product_id: 102, quantity: 2, order_date: '2023-01-20' }, // Alice kauft 2 Tassen
+            { order_id: 504, user_id: 3, product_id: 105, quantity: 1, order_date: '2023-02-01' }, // Charlie kauft Smartphone
+            { order_id: 505, user_id: 5, product_id: 108, quantity: 5, order_date: '2023-02-05' }, // Eve kauft 5 T-Shirts
+            { order_id: 506, user_id: 8, product_id: 104, quantity: 1, order_date: '2023-02-07' }, // Henry kauft Kopfhörer
+            // Henry kauft noch etwas (gleicher User, anderes Produkt)
+            { order_id: 507, user_id: 8, product_id: 101, quantity: 1, order_date: '2023-02-08' }, // Henry kauft Laptop
+            // Bob kauft nochmal das gleiche Produkt
+            { order_id: 508, user_id: 2, product_id: 103, quantity: 1, order_date: '2023-02-15' }, // Bob kauft noch 1 Buch
+            // Eine Bestellung für einen User, den es gibt (David, ID 4)
+            { order_id: 509, user_id: 4, product_id: 102, quantity: 1, order_date: '2023-03-01' }, // David kauft Tasse
+            // Eine Bestellung für ein Produkt, das es gibt (Laptop, ID 101), von Jack (ID 10)
+            { order_id: 510, user_id: 10, product_id: 101, quantity: 1, order_date: '2023-03-05' } // Jack kauft Laptop
         ]
     };
 
@@ -91,11 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const columns = Object.keys(firstRow);
                 let pk = null;
                 let ai = null;
-                
+
                 // Einfache Annahme für PK/AI für unsere Beispieldaten
                 if (columns.includes('id')) { pk = 'id'; ai = 'id'; }
                 else if (columns.includes('order_id')) { pk = 'order_id'; ai = 'order_id'; }
-                
+
                 dbSchema[tableName] = {
                     columns: columns,
                     primaryKey: pk,
@@ -118,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const tableName in dbSchema) {
             const schema = dbSchema[tableName];
             const aiCol = schema.autoincrement;
-            
+
             if (aiCol && db[tableName].length > 0) {
                 // Finde den höchsten Wert in der Spalte
                 const maxVal = Math.max(...db[tableName].map(row => row[aiCol] || 0));
@@ -143,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 3. EVENT LISTENER ---
     runButton.addEventListener('click', handleQuery);
-    
+
     queryInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
             event.preventDefault();
@@ -171,22 +137,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 4. DER KERN: DER "DISPATCHER" ---
     /**
-     * (AKTUALISIERT) Erkennt jetzt CREATE TABLE.
+     * (AKTUALISIERT) Erkennt jetzt CREATE TABLE und erlaubt
+     * Abfragen, die direkt mit FROM beginnen (impliziert SELECT *).
      */
     function parseAndExecute(query) {
         const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-        const upperQuery = normalizedQuery.toUpperCase();
+        let upperQuery = normalizedQuery.toUpperCase();
 
         if (!normalizedQuery.endsWith(';')) {
             throw new Error("Syntax-Fehler: Jede Abfrage muss mit einem Semikolon (';') enden.");
         }
 
-        // --- NEUER BEFEHL ---
+        // --- NEUE LOGIK: FROM am Anfang ---
+        if (upperQuery.startsWith('FROM ')) {
+            // Füge 'SELECT * ' am Anfang hinzu
+            const fullQuery = `SELECT * ${normalizedQuery}`;
+            // Aktualisiere upperQuery für die nächste Prüfung
+            upperQuery = fullQuery.toUpperCase();
+            // Übergib die *vollständige* Abfrage an handleSelect
+            return handleSelect(fullQuery);
+        }
+        // --- ENDE DER NEUEN LOGIK ---
+
+        // Bestehende Checks
         if (upperQuery.startsWith('CREATE TABLE ')) {
             return handleCreateTable(normalizedQuery);
         }
-        // ---
-        
         if (upperQuery.startsWith('SELECT ')) {
             return handleSelect(normalizedQuery);
         }
@@ -200,11 +176,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return handleDelete(normalizedQuery);
         }
 
-        throw new Error(`Syntax-Fehler: Nicht unterstützter Befehlstyp.`);
+        throw new Error(`Syntax-Fehler: Nicht unterstützter Befehlstyp. Beginne mit SELECT, FROM, INSERT INTO, UPDATE, DELETE FROM oder CREATE TABLE.`);
     }
 
     // --- 5. BEFEHLS-HANDLER ---
-    
+
     /**
      * (NEU) Handler für CREATE TABLE
      */
@@ -221,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleSelect(query) {
         // 1. PARSING
         const plan = buildQueryPlan(query);
-        
+
         // 2. EXECUTION: Die Pipeline
         let data = executeFrom(plan);
         const allColumns = getPrefixedColumnsFromPlan(plan);
@@ -248,13 +224,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // f. LIMIT (TOP)
         if (plan.limit !== null) {
             // Korrigiert: plan.limit übergeben
-            finalData = executeLimit(finalData, plan.limit); 
+            finalData = executeLimit(finalData, plan.limit);
         }
 
         // 3. Gib das finale Objekt zurück
         return { data: finalData, headers: finalHeaders };
     }
-    
+
    /**
      * (STARK AKTUALISIERT) Verwendet jetzt 'dbSchema' für Validierung und PK-Check
      * Erzwingt NOT NULL für PKs und fügt AUTOINCREMENT-Werte automatisch ein.
@@ -263,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)(?:\s*\((.+?)\))?\s+VALUES\s*\((.+?)\);/i;
         const match = query.match(insertRegex);
         if (!match) throw new Error('Ungültige INSERT-Syntax. Erwartet: ... VALUES ...');
-        
+
         const [_, tableName, colStr, valStr] = match;
 
         if (!db[tableName] || !dbSchema[tableName]) {
@@ -272,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const schema = dbSchema[tableName];
         const pk = schema.primaryKey;
         const autoIncCol = schema.autoincrement;
-        
+
         const values = valStr.split(',').map(v => v.trim());
         let columns;
 
@@ -335,14 +311,14 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleUpdate(query) {
         const plan = buildUpdatePlan(query);
-        
+
         const schema = dbSchema[plan.table];
         if (!schema) {
             throw new Error(`Fehler: Tabelle '${plan.table}' nicht gefunden.`);
         }
-        
+
         const allColumns = schema.columns.map(col => `${plan.table}.${col}`);
-        
+
         const updateCount = executeUpdate(plan, allColumns, schema.primaryKey);
         return { message: `${updateCount} Zeile(n) erfolgreich aktualisiert.` };
     }
@@ -358,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const allColumns = dbSchema[plan.table].columns.map(col => `${plan.table}.${col}`);
-        
+
         const deleteCount = executeDelete(plan, allColumns);
         return { message: `${deleteCount} Zeile(n) erfolgreich gelöscht.` };
     }
@@ -366,14 +342,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 6. PARSING-HILFSFUNKTIONEN ---
 
-    /**
-     * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
-     * Erkennt jetzt 'AUTOINCREMENT' oder 'AUTO_INCREMENT'
-     */
-    /**
-     * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
-     * Erkennt jetzt 'AUTO_INCREMENT' (MySQL-Syntax).
-     */
     /**
      * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
      * Erkennt jetzt AUTO_INCREMENT und inline PRIMARY KEY.
@@ -437,6 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return plan;
     }
+
     /**
      * (AKTUALISIERT) buildQueryPlan (SELECT)
      * Erkennt jetzt JOIN, DISTINCT, TOP und LIMIT.
@@ -450,8 +419,8 @@ document.addEventListener('DOMContentLoaded', () => {
             orderBy: null
         };
 
-        const fromMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)((?:\s+(?:INNER\s+)?JOIN\s+[a-zA-Z0-9_]+\s+ON\s+.+?)+)/i);
-        if (fromMatch) {
+            const fromMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)((?:\s+(?:INNER\s+)?JOIN\s+[a-zA-Z0-9_]+\s+ON\s+[a-zA-Z0-9_\.]+\s*=\s*[a-zA-Z0-9_\.]+)+)/i);
+            if (fromMatch) {
             plan.from = fromMatch[1];
             const joinRegex = /(?:INNER\s+)?JOIN\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_\.]+\s*=\s*[a-zA-Z0-9_\.]+)/gi;
             let joinMatch;
@@ -481,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
             plan.limit = parseInt(topMatch[1]);
             selectClause = selectClause.substring(topMatch[0].length).trim();
         }
-        
+
         plan.select = parseSelectColumns(selectClause);
 
         const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|;|$)/i);
@@ -501,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return plan;
     }
-    
+
     // (parseSelectColumns, parseOrderBy - unverändert)
     function parseSelectColumns(selectClause) {
         const columnStrings = selectClause.split(',').map(c => c.trim());
@@ -539,29 +508,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const plan = {};
         const updateMatch = query.match(/UPDATE\s+([a-zA-Z0-9_]+)\s+SET/i);
         if (!updateMatch) throw new Error("Syntax-Fehler: 'UPDATE table SET' nicht gefunden.");
-        
+
         plan.table = updateMatch[1];
         const schema = dbSchema[plan.table];
         if (!schema) throw new Error(`Fehler: Tabelle '${plan.table}' nicht gefunden.`);
 
         const setMatch = query.match(/SET\s+(.+?)(?:\s+WHERE|;|$)/i);
         if (!setMatch) throw new Error("Syntax-Fehler: 'SET'-Klausel nicht gefunden.");
-        
+
         plan.setClauses = setMatch[1].split(',').map(clause => {
             const parts = clause.split('=');
             if (parts.length !== 2) throw new Error(`Syntax-Fehler in SET-Klausel: '${clause}'`);
-            
+
             const column = parts[0].trim();
             if (!schema.columns.includes(column)) {
                 throw new Error(`Fehler: Spalte '${column}' in SET-Klausel nicht in Tabelle '${plan.table}'.`);
             }
-            
+
             const valueStr = parts[1].trim();
             let value;
             const cleanedValStr = valueStr.replace(/['"]/g, '');
             if (!isNaN(parseFloat(cleanedValStr)) && isFinite(cleanedValStr)) value = parseFloat(cleanedValStr);
             else value = cleanedValStr;
-            
+
             return { column, value };
         });
 
@@ -570,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return plan;
     }
-    
+
     // (buildDeletePlan - unverändert)
     function buildDeletePlan(query) {
         const plan = {};
@@ -594,19 +563,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (db[tableName] || dbSchema[tableName]) {
             throw new Error(`Fehler: Tabelle '${tableName}' existiert bereits.`);
         }
-        
+
         db[tableName] = [];
-        
+
         dbSchema[tableName] = {
             columns: plan.columns,
             primaryKey: plan.primaryKey,
             autoincrement: plan.autoincrement
         };
-        
+
         if (plan.autoincrement) {
             dbSequences[tableName] = 1;
         }
-        
+
         return `Tabelle '${tableName}' erfolgreich erstellt.`;
     }
 
@@ -630,13 +599,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const joinData = db[joinTable].map(row => prefixColumns(joinTable, row));
             const onMatch = join.on.match(/([a-zA-Z0-9_\.]+)\s*=\s*([a-zA-Z0-9_\.]+)/);
             if (!onMatch) throw new Error(`Syntax-Fehler in ON-Klausel: '${join.on}'.`);
-            
+
             const [_, col1, col2] = onMatch.map(s => s.trim());
 
             const joinedData = [];
             for (const rowA of data) {
                 for (const rowB of joinData) {
                     const mergedRow = { ...rowA, ...rowB };
+                    // Korrektur: Nutze == für Typ-Koerzion bei Bedarf
                     if (mergedRow[col1] == mergedRow[col2]) {
                         joinedData.push(mergedRow);
                     }
@@ -644,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             data = joinedData;
         }
-        
+
         return data;
     }
 
@@ -661,13 +631,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * (AKTUALISIERT) Führt den SELECT-Teil aus.
-     * Gibt jetzt ein { data, headers } Objekt zurück.
+     * (KORRIGIERT) Führt den SELECT-Teil aus.
+     * Leitet Header für `SELECT *` bei JOINs korrekt aus den Daten ab.
      */
     function executeSelect(data, selectPlan, allColumns) {
         const isAggregateQuery = selectPlan.some(col => col.func);
 
         if (isAggregateQuery) {
+            // --- FALL 1: AGGREGATION --- (Unverändert)
             const isPureAggregate = selectPlan.every(col => col.func);
             if (!isPureAggregate) {
                 const nonAggCol = selectPlan.find(col => !col.func).expr;
@@ -681,17 +652,29 @@ document.addEventListener('DOMContentLoaded', () => {
             return { data: [resultRow], headers: headers };
 
         } else {
+            // --- FALL 2: PROJEKTION ---
+
             if (selectPlan.length === 1 && selectPlan[0].expr === '*') {
+                // --- Logik für SELECT * ---
                 const prefixes = new Set(allColumns.map(col => col.split('.')[0]));
+
                 if (prefixes.size === 1) {
+                    // Nur eine Tabelle (kein JOIN). Un-Präfixen. (Unverändert)
                     const tableName = allColumns[0].split('.')[0];
                     const headers = dbSchema[tableName] ? dbSchema[tableName].columns : [];
                     const finalData = data.map(row => unPrefixColumns(row));
                     return { data: finalData, headers: headers };
+                } else {
+                    // --- KORREKTUR FÜR JOIN ---
+                    // Mehrere Tabellen (JOIN). Behalte Präfixe.
+                    // ABER: Leite Header aus der ersten Datenzeile ab, falls vorhanden.
+                    const headers = data.length > 0 ? Object.keys(data[0]) : allColumns;
+                    return { data: data, headers: headers };
+                    // --- ENDE DER KORREKTUR ---
                 }
-                return { data: data, headers: allColumns };
             }
 
+            // --- Logik für SELECT col1, col2 AS alias ... --- (Unverändert)
             const headers = selectPlan.map(col => col.alias);
             const finalData = data.map(row => {
                 const newRow = {};
@@ -742,9 +725,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function executeUpdate(plan, allColumns, primaryKey) { // primaryKey als neuer Parameter
         const tableName = plan.table;
         if (!db[tableName]) throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
-        
+
         let updateCount = 0;
-        
+
         db[tableName].forEach(row => {
             let matchesWhere = true;
             if (plan.where) {
@@ -753,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (matchesWhere) {
                 updateCount++;
-                const updatedRow = { ...row }; 
+                const updatedRow = { ...row };
                 plan.setClauses.forEach(clause => {
                     const { column, value } = clause;
                     if (column === primaryKey && value == null) {
@@ -764,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (primaryKey) {
                     const newPkValue = updatedRow[primaryKey];
                     const oldPkValue = row[primaryKey];
-                    if (newPkValue != oldPkValue) { 
+                    if (newPkValue != oldPkValue) {
                         const exists = db[tableName].some(r => r[primaryKey] == newPkValue);
                         if (exists) {
                             throw new Error(`PRIMARY KEY-Verletzung: Ein Eintrag mit ${primaryKey} = ${newPkValue} existiert bereits.`);
@@ -796,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteCount = originalLength - db[tableName].length;
         return deleteCount;
     }
-    
+
     // (executeDistinct, executeLimit - unverändert)
     function executeDistinct(data) {
         const seen = new Set();
@@ -816,7 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // --- 8. ALLGEMEINE HELPER-FUNKTIONEN ---
-    
+
     /**
      * (NEU) Holt alle präfixierten Spalten aus dem Schema für einen Plan
      */
@@ -832,7 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return allColumns;
     }
-    
+
     // (prefixColumns, unPrefixColumns - unverändert)
     function prefixColumns(tableName, row) {
         const newRow = {};
@@ -851,25 +834,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // (resolveColumnName, resolveColumnNames - unverändert)
+/**
+     * (KORRIGIERT) Löst einen Spaltennamen auf (z.B. "age" -> "users.age")
+     * Fügt zusätzliches Trimmen hinzu und verwendet strengen Vergleich.
+     */
     function resolveColumnName(colName, allColumns) {
-        if (colName.includes('.')) {
-            if (allColumns.includes(colName)) return colName;
-            throw new Error(`Fehler: Spalte '${colName}' nicht gefunden.`);
+        const trimmedColName = colName.trim(); // Stelle sicher, dass keine Leerzeichen stören
+
+        if (trimmedColName.includes('.')) {
+            // Bereits qualifiziert (z.B. "users.name")
+            // Verwende 'find' für einen expliziten Check
+            const found = allColumns.find(c => c === trimmedColName);
+            if (found) {
+                return trimmedColName; // Gefunden, alles gut
+            }
+            // Nicht gefunden trotz Präfix -> Fehler
+            throw new Error(`Fehler: Spalte '${trimmedColName}' nicht gefunden.`);
+
+        } else {
+            // Nicht qualifiziert (z.B. "name")
+            const matches = allColumns.filter(col => col.endsWith(`.${trimmedColName}`));
+
+            if (matches.length === 1) {
+                return matches[0]; // Eindeutig gefunden, z.B. "users.name"
+            }
+            if (matches.length > 1) {
+                throw new Error(`Fehler: Spaltenname '${trimmedColName}' ist mehrdeutig (gefunden in ${matches.join(', ')}).`);
+            }
+            // Weder qualifiziert noch als eindeutiger Teil gefunden -> Fehler
+            throw new Error(`Fehler: Spalte '${trimmedColName}' nicht gefunden.`);
         }
-        const matches = allColumns.filter(col => col.endsWith(`.${colName}`));
-        if (matches.length === 1) return matches[0];
-        if (matches.length > 1) throw new Error(`Fehler: Spaltenname '${colName}' ist mehrdeutig.`);
-        throw new Error(`Fehler: Spalte '${colName}' nicht gefunden.`);
     }
 
+/**
+     * (KORRIGIERT) Wandelt einen SQL-Ausdruck in JS um (z.B. "age + 10" -> "row['users.age'] + 10")
+     * Fügt zusätzliches Trimmen hinzu.
+     */
+/**
+     * (KORRIGIERT) Wandelt einen SQL-Ausdruck in JS um (z.B. "age + 10" -> "row['users.age'] + 10")
+     * Verwendet eine korrigierte Regex, die 'table.column' als ein Token erkennt.
+     */
     function resolveColumnNames(expression, allColumns) {
-        return expression.replace(/\b([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)?)\b/g, (match) => {
-            if (!isNaN(parseFloat(match))) return match;
-            const resolvedCol = resolveColumnName(match, allColumns);
+        // Trimme den gesamten Ausdruck zuerst
+        const trimmedExpression = expression.trim();
+        
+        // --- KORRIGIERTE REGEX ---
+        // Diese Regex sucht zuerst nach dem 'tabelle.spalte'-Format 
+        // und DANN nach dem 'spalte'-Format. Sie verwendet kein \b.
+        return trimmedExpression.replace(/([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+|[a-zA-Z0-9_]+)/g, (match) => {
+        // --- ENDE DER KORREKTUR ---
+
+            const trimmedMatch = match.trim(); // Trimme auch den gefundenen Teil
+            // Wenn der Match eine Zahl ist, ignoriere ihn
+            if (!isNaN(parseFloat(trimmedMatch)) && isFinite(trimmedMatch)) {
+                return trimmedMatch;
+            }
+            // Ansonsten, löse den getrimmten Namen auf und setze ihn in row[...]
+            const resolvedCol = resolveColumnName(trimmedMatch, allColumns);
             return `row["${resolvedCol}"]`;
         });
     }
-
     // (convertSqlWhereToJs - unverändert)
     /**
      * (AKTUALISIERT) Übersetzt SQL WHERE in JS.
@@ -973,14 +997,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Unbekannte Aggregatfunktion: ${funcName}`);
         }
     }
-    
+
     // (displayResults, displayError - unverändert)
     /**
      * (AKTUALISIERT) Zeigt die Ergebnisse an.
      * Verarbeitet jetzt { data, headers } und zeigt Header auch bei 0 Zeilen an.
      */
     function displayResults(result) {
-        // Fall 1: Erfolgsmeldung (INSERT, UPDATE, DELETE, CREATE)
+        // Fall 1: Erfolgsmeldung
         if (result.message) {
             messageDiv.textContent = result.message;
             outputDiv.innerHTML = '';
@@ -990,24 +1014,23 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fall 2: SELECT-Ergebnisobjekt
         if (result.data !== undefined && result.headers !== undefined) {
             const data = result.data;
-            const headers = result.headers;
+            const headers = result.headers; // Verwende die übergebenen Header
 
-            // Erfolgsmeldung (0 oder N Zeilen)
-            if (data.length === 0) {
-                messageDiv.textContent = 'Abfrage erfolgreich ausgeführt. 0 Zeilen zurückgegeben.';
-            } else {
-                messageDiv.textContent = `Abfrage erfolgreich ausgeführt. ${data.length} Zeilen zurückgegeben.`;
+            // Erfolgsmeldung
+            messageDiv.textContent = `Abfrage erfolgreich ausgeführt. ${data.length} Zeile(n) zurückgegeben.`;
+
+            // Nur Header anzeigen, wenn keine Daten UND Header vorhanden sind
+            if (data.length === 0 && headers.length === 0) {
+                 return; // Nichts zu zeigen
             }
-
-            // Wenn keine Header definiert sind (seltsamer Fall), nichts tun
-            if (headers.length === 0) {
+             // Wenn keine Header, aber Daten vorhanden sind (sollte nicht passieren), abbrechen
+            if (headers.length === 0 && data.length > 0){
+                displayError("Interner Fehler: Daten vorhanden, aber keine Header zum Anzeigen.");
                 return;
             }
 
-            // --- NEUE LOGIK: Tabelle IMMER zeichnen ---
+            // Tabelle erstellen
             const table = document.createElement('table');
-            
-            // 1. Header zeichnen
             const thead = table.createTHead();
             const headerRow = thead.insertRow();
             headers.forEach(headerText => {
@@ -1016,22 +1039,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 headerRow.appendChild(th);
             });
 
-            // 2. Datenzeilen zeichnen, NUR WENN VORHANDEN
+            // Datenzeilen zeichnen (falls vorhanden)
             if (data.length > 0) {
                 const tbody = table.createTBody();
                 data.forEach(rowData => {
                     const row = tbody.insertRow();
-                    headers.forEach(header => {
+                    headers.forEach(header => { // Iteriere über die übergebenen Header
                         const cell = row.insertCell();
-                        cell.textContent = rowData[header] === null ? 'null' : rowData[header];
+                        // Hole den Wert sicher, falls eine Spalte im Header fehlt (sollte nicht passieren)
+                        const value = rowData.hasOwnProperty(header) ? rowData[header] : '';
+                        cell.textContent = value === null ? 'null' : value;
                     });
                 });
             }
 
             outputDiv.appendChild(table);
+        } else {
+             displayError("Interner Fehler: Unerwartetes Ergebnisformat erhalten.");
         }
     }
-    
+
     function displayError(message) {
         outputDiv.innerHTML = `<div class="error">${message}</div>`;
     }
