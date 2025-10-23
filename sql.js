@@ -184,13 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     }
 
-    // (handleInsert, handleUpdate, handleDelete sind unverändert)
-    // ... (Füge hier deine handleInsert, handleUpdate, handleDelete Funktionen ein) ...
-    // ... (Der Code ist lang, daher füge ich sie hier nicht erneut ein) ...
 
-    /**
-     * Verarbeitet INSERT-Abfragen
-     */
     function handleInsert(query) {
         const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)(?:\s*\((.+?)\))?\s+VALUES\s*\((.+?)\);/i;
         const match = query.match(insertRegex);
@@ -232,9 +226,17 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Verarbeitet UPDATE-Abfragen.
      */
+/**
+     * (AKTUALISIERT) Verarbeitet UPDATE-Abfragen.
+     * Erstellt jetzt korrekte, präfixierte Spalten für die WHERE-Logik.
+     */
     function handleUpdate(query) {
         const plan = buildUpdatePlan(query);
-        const allColumns = (db[plan.table].length > 0) ? Object.keys(db[plan.table][0]) : [];
+        
+        // Erzeuge eine temporäre, präfixierte Spaltenliste für den WHERE-Parser
+        const tempPrefixedData = (db[plan.table] || []).map(row => prefixColumns(plan.table, row));
+        const allColumns = (tempPrefixedData.length > 0) ? Object.keys(tempPrefixedData[0]) : [];
+        
         const updateCount = executeUpdate(plan, allColumns);
         return { message: `${updateCount} Zeile(n) erfolgreich aktualisiert.` };
     }
@@ -242,13 +244,20 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Verarbeitet DELETE-Abfragen.
      */
+/**
+     * (AKTUALISIERT) Verarbeitet DELETE-Abfragen.
+     * Erstellt jetzt korrekte, präfixierte Spalten für die WHERE-Logik.
+     */
     function handleDelete(query) {
         const plan = buildDeletePlan(query);
-        const allColumns = (db[plan.table].length > 0) ? Object.keys(db[plan.table][0]) : [];
+
+        // Erzeuge eine temporäre, präfixierte Spaltenliste für den WHERE-Parser
+        const tempPrefixedData = (db[plan.table] || []).map(row => prefixColumns(plan.table, row));
+        const allColumns = (tempPrefixedData.length > 0) ? Object.keys(tempPrefixedData[0]) : [];
+        
         const deleteCount = executeDelete(plan, allColumns);
         return { message: `${deleteCount} Zeile(n) erfolgreich gelöscht.` };
     }
-
     // --- 6. PARSING-HILFSFUNKTIONEN ---
 
     /**
@@ -542,50 +551,81 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // (executeUpdate, executeDelete sind ÜBERARBEITET, um allColumns zu nutzen)
     
-    function executeUpdate(plan, allColumns) {
+    /**
+     * (AKTUALISIERT) Führt den UPDATE-Plan aus.
+     * Präfixt jetzt Zeilen für 'executeWhere' korrekt.
+     */
+    function executeUpdate(plan, allColumns) { // allColumns ist jetzt präfixiert
         const tableName = plan.table;
-        if (!db[tableName]) throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        if (!db[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+
         let updateCount = 0;
         
-        // Wir iterieren über das Original-DB-Array
+        // Wir iterieren über das Original-DB-Array, um es zu ändern
         db[tableName].forEach(row => {
+            
             let matchesWhere = true;
+            
             if (plan.where) {
-                // Führe WHERE auf der (ungejointen) Zeile aus
-                matchesWhere = executeWhere([row], plan.where, allColumns).length > 0;
+                // 1. Präfixe die *aktuelle* Zeile für den Test
+                const prefixedRow = prefixColumns(tableName, row);
+                
+                // 2. Teste die präfixierte Zeile mit der WHERE-Logik
+                matchesWhere = executeWhere([prefixedRow], plan.where, allColumns).length > 0;
             }
             
             if (matchesWhere) {
                 updateCount++;
+                
                 plan.setClauses.forEach(clause => {
                     const { column, value } = clause;
+                    
+                    // 3. Löse den Spaltennamen auf (z.B. 'city' -> 'users.city')
                     const resolvedCol = resolveColumnName(column, allColumns);
-                    // Entferne Präfix für das Update auf der Originaltabelle
+                    
+                    // 4. Hole den *rohen* Spaltennamen (z.B. 'users.city' -> 'city')
                     const rawCol = resolvedCol.split('.')[1] || resolvedCol; 
+                    
                     if (!row.hasOwnProperty(rawCol)) {
                         throw new Error(`Fehler: Spalte '${column}' in Tabelle '${tableName}' nicht gefunden.`);
                     }
+                    
+                    // 5. Aktualisiere die *Originalzeile*
                     row[rawCol] = value;
                 });
             }
         });
+
         return updateCount;
     }
 
-    function executeDelete(plan, allColumns) {
+    /**
+     * (AKTUALISIERT) Führt den DELETE-Plan aus.
+     * Präfixt jetzt Zeilen für 'executeWhere' korrekt.
+     */
+    function executeDelete(plan, allColumns) { // allColumns ist jetzt präfixiert
         const tableName = plan.table;
-        if (!db[tableName]) throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        if (!db[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+
         const originalLength = db[tableName].length;
         let rowsToKeep;
 
         if (plan.where) {
             rowsToKeep = db[tableName].filter(row => {
-                const matchesWhere = executeWhere([row], plan.where, allColumns).length > 0;
-                return !matchesWhere; // Behalte, wenn NICHT matcht
+                // 1. Präfixe die *aktuelle* Zeile
+                const prefixedRow = prefixColumns(tableName, row);
+                // 2. Teste sie
+                const matchesWhere = executeWhere([prefixedRow], plan.where, allColumns).length > 0;
+                return !matchesWhere; // Behalte, wenn sie *nicht* matcht
             });
         } else {
             rowsToKeep = []; // Lösche alles
         }
+
         db[tableName] = rowsToKeep;
         const deleteCount = originalLength - rowsToKeep.length;
         return deleteCount;
@@ -666,17 +706,21 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * (STARK ÜBERARBEITET) Übersetzt SQL WHERE in JS.
      */
+    /**
+     * (AKTUALISIERT) Übersetzt SQL WHERE in JS.
+     * Erkennt jetzt alle Vergleiche: >=, <=, !=, <>
+     */
     function convertSqlWhereToJs(clause, allColumns) {
         let jsClause = clause;
 
         // Hilfsfunktion, um einen Spaltennamen aufzulösen und für JS zu quoten
         const res = (col) => resolveColumnNames(col, allColumns);
 
-        // REGEL 1: IS (NOT) NULL
+        // REGEL 1: IS (NOT) NULL (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+IS\s+NOT\s+NULL\b/gi, (m, col) => `${res(col)} != null`);
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+IS\s+NULL\b/gi, (m, col) => `${res(col)} == null`);
 
-        // REGEL 2: LIKE / NOT LIKE
+        // REGEL 2: LIKE / NOT LIKE (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+(NOT\s+)?LIKE\s+(["'](.*?)["'])/gi, (m, col, notOp, strLit, pattern) => {
             const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const regexPattern = escapedPattern.replace(/%/g, '.*').replace(/_/g, '.');
@@ -684,7 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return (notOp) ? `!${jsTest}` : jsTest;
         });
         
-        // REGEL 3: IN / NOT IN
+        // REGEL 3: IN / NOT IN (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+(NOT\s+)?IN\s*\((.+?)\)/gi, (m, col, notOp, valueList) => {
             let jsList, jsCheck;
             if (valueList.includes("'") || valueList.includes('"')) {
@@ -698,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return (notOp) ? `!${jsTest}` : jsTest;
         });
 
-        // REGEL 4: BETWEEN / NOT BETWEEN
+        // REGEL 4: BETWEEN / NOT BETWEEN (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+(NOT\s+)?BETWEEN\s+([0-9\.]+|["'].*?["'])\s+AND\s+([0-9\.]+|["'].*?["'])/gi, (m, col, notOp, val1, val2) => {
             let jsCheck = res(col), jsVal1 = val1, jsVal2 = val2;
             if (val1.startsWith("'") || val1.startsWith('"')) {
@@ -710,27 +754,36 @@ document.addEventListener('DOMContentLoaded', () => {
             return (notOp) ? `!${jsTest}` : jsTest;
         });
 
-        // REGEL 5: AND / OR / NOT
+        // REGEL 5: AND / OR / NOT (unverändert)
         jsClause = jsClause.replace(/\bAND\b/gi, ' && ').replace(/\bOR\b/gi, ' || ').replace(/\bNOT\b/gi, ' ! ');
 
         // REGEL 6: Vergleiche (z.B. col = col, col = num, col = str)
-        // Muss NACH speziellen Regeln wie LIKE, IN, BETWEEN laufen
-        jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s*(=|>|<)\s*([a-zA-Z0-9_\.]+|["'].*?["']|[0-9\.]+)/gi, (match, col1, op, val) => {
+        // --- HIER IST DIE ÄNDERUNG ---
+        // Die Regex (>=|<=|!=|<>|=|>|<) prüft jetzt alle Operatoren.
+        jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s*(>=|<=|!=|<>|=|>|<)\s*([a-zA-Z0-9_\.]+|["'].*?["']|[0-9\.]+)/gi, (match, col1, op, val) => {
+            
+            // NEUE Logik, um Operatoren zu übersetzen
+            let jsOp = op;
+            if (op === '=') jsOp = '==';  // SQL '=' -> JS '=='
+            if (op === '<>') jsOp = '!='; // SQL '<>' -> JS '!='
+            // '!=' bleibt '!='
+            
             const jsCol1 = res(col1);
             let jsVal = val;
             
             if (val.startsWith("'") || val.startsWith('"')) {
                 // Vergleich mit String -> case-insensitive
-                return `(String(${jsCol1}).toLowerCase() ${op === '=' ? '==' : op} ${val.toLowerCase()})`;
+                return `(String(${jsCol1}).toLowerCase() ${jsOp} ${val.toLowerCase()})`;
             } else if (!isNaN(parseFloat(val))) {
                 // Vergleich mit Zahl
-                return `(${jsCol1} ${op === '=' ? '==' : op} ${val})`;
+                return `(${jsCol1} ${jsOp} ${val})`;
             } else {
-                // Vergleich mit anderer Spalte (z.B. users.id = orders.user_id)
+                // Vergleich mit anderer Spalte
                 const jsCol2 = res(val);
-                return `(${jsCol1} ${op === '=' ? '==' : op} ${jsCol2})`;
+                return `(${jsCol1} ${jsOp} ${jsCol2})`;
             }
         });
+        // --- ENDE DER ÄNDERUNG ---
 
         return jsClause;
     }
