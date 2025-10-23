@@ -2,7 +2,6 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. MOCK DATABASE ---
-    // (Unverändert)
     const db = {
         users: [
             { id: 1, name: 'Alice', age: 25, city: 'London', status: 'active' },
@@ -43,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 114, name: 'Pen Set', category: 'Stationery', price: 8, stock: 250 },
             { id: 115, name: 'Backpack', category: 'Apparel', price: 50, stock: 40 },
             { id: 116, name: 'Book: Advanced JS', category: 'Media', price: 45, stock: 50 },
-            { id: 117, name: 'Desk Lamp', category: 'Homeware', price: 35, stock: 0 }, // Out of stock!
+            { id: 117, name: 'Desk Lamp', category: 'Homeware', price: 35, stock: 0 },
             { id: 118, name: 'Smartwatch', category: 'Electronics', price: 250, stock: 30 },
             { id: 119, name: 'Water Bottle', category: 'Homeware', price: 22, stock: 90 },
             { id: 120, name: 'Yoga Mat', category: 'Sports', price: 30, stock: 60 },
@@ -77,15 +76,72 @@ document.addEventListener('DOMContentLoaded', () => {
         ]
     };
 
+    // --- 1.5 NEUES SCHEMA-OBJEKT ---
+    // Hier speichern wir die Struktur (Spalten, Primary Keys)
+    const dbSchema = {};
+
+    /**
+     * (AKTUALISIERT) Initialisiert das Schema für die hartcodierten Tabellen
+     * "Errät" jetzt auch AUTOINCREMENT-Spalten
+     */
+    function initializeSchema() {
+        for (const tableName in db) {
+            if (db[tableName].length > 0) {
+                const firstRow = db[tableName][0];
+                const columns = Object.keys(firstRow);
+                let pk = null;
+                let ai = null;
+                
+                // Einfache Annahme für PK/AI für unsere Beispieldaten
+                if (columns.includes('id')) { pk = 'id'; ai = 'id'; }
+                else if (columns.includes('order_id')) { pk = 'order_id'; ai = 'order_id'; }
+                
+                dbSchema[tableName] = {
+                    columns: columns,
+                    primaryKey: pk,
+                    autoincrement: ai // (NEU)
+                };
+            } else {
+                dbSchema[tableName] = { columns: [], primaryKey: null, autoincrement: null };
+            }
+        }
+    }
+
+    // (NEU) Speichert den NÄCHSTEN verfügbaren Wert für eine AI-Spalte
+    const dbSequences = {};
+
+    /**
+     * (NEU) Initialisiert die Sequenzen für die hartcodierten Tabellen
+     * Findet den höchsten Wert und setzt den Zähler auf +1
+     */
+    function initializeSequences() {
+        for (const tableName in dbSchema) {
+            const schema = dbSchema[tableName];
+            const aiCol = schema.autoincrement;
+            
+            if (aiCol && db[tableName].length > 0) {
+                // Finde den höchsten Wert in der Spalte
+                const maxVal = Math.max(...db[tableName].map(row => row[aiCol] || 0));
+                // Setze den *nächsten* Wert
+                dbSequences[tableName] = maxVal + 1;
+            } else if (aiCol) {
+                // Tabelle ist leer
+                dbSequences[tableName] = 1;
+            }
+        }
+    }
+
+    // Schema und Sequenzen beim Laden der Seite initialisieren
+    initializeSchema();
+    initializeSequences(); // Muss nach initializeSchema aufgerufen werden
+
     // --- 2. GET DOM ELEMENTS ---
-    // (Unverändert)
     const queryInput = document.getElementById('sql-query');
     const runButton = document.getElementById('run-button');
     const outputDiv = document.getElementById('results-output');
     const messageDiv = document.getElementById('results-message');
 
     // --- 3. EVENT LISTENER ---
-    // (Unverändert, mit Ctrl+Enter)
     runButton.addEventListener('click', handleQuery);
     
     queryInput.addEventListener('keydown', (event) => {
@@ -114,7 +170,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 4. DER KERN: DER "DISPATCHER" ---
-    // (Unverändert)
+    /**
+     * (AKTUALISIERT) Erkennt jetzt CREATE TABLE.
+     */
     function parseAndExecute(query) {
         const normalizedQuery = query.replace(/\s+/g, ' ').trim();
         const upperQuery = normalizedQuery.toUpperCase();
@@ -123,6 +181,12 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error("Syntax-Fehler: Jede Abfrage muss mit einem Semikolon (';') enden.");
         }
 
+        // --- NEUER BEFEHL ---
+        if (upperQuery.startsWith('CREATE TABLE ')) {
+            return handleCreateTable(normalizedQuery);
+        }
+        // ---
+        
         if (upperQuery.startsWith('SELECT ')) {
             return handleSelect(normalizedQuery);
         }
@@ -140,75 +204,99 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 5. BEFEHLS-HANDLER ---
-    // (handleSelect ist NEU, Rest ist unverändert)
+    
+    /**
+     * (NEU) Handler für CREATE TABLE
+     */
+    function handleCreateTable(query) {
+        const plan = buildCreatePlan(query);
+        const result = executeCreate(plan);
+        return { message: result };
+    }
 
     /**
-     * (STARK ÜBERARBEITET) Verarbeitet SELECT-Abfragen über eine Pipeline.
-     * Unterstützt jetzt JOINs.
+     * (AKTUALISIERT) Verarbeitet SELECT-Abfragen über eine Pipeline.
+     * Gibt jetzt ein Objekt { data, headers } zurück.
      */
     function handleSelect(query) {
-        // 1. PARSING: Abfrage in einen "Plan" umwandeln
+        // 1. PARSING
         const plan = buildQueryPlan(query);
-
-        // 2. EXECUTION: Die Pipeline Schritt für Schritt ausführen
         
-        // a. FROM / JOIN
-        // executeFrom gibt jetzt Daten mit präfixierten Spalten zurück
-        // z.B. { "users.id": 1, "users.name": "Alice", "orders.order_id": 501, ... }
+        // 2. EXECUTION: Die Pipeline
         let data = executeFrom(plan);
-        const allColumns = (data.length > 0) ? Object.keys(data[0]) : [];
+        const allColumns = getPrefixedColumnsFromPlan(plan);
 
-        // b. WHERE
         if (plan.where) {
             data = executeWhere(data, plan.where, allColumns);
         }
 
-        // c. SELECT (Berechnungen & Aliase)
-        data = executeSelect(data, plan.select, allColumns);
+        // c. SELECT
+        const selectResult = executeSelect(data, plan.select, allColumns);
+        let finalData = selectResult.data;
+        const finalHeaders = selectResult.headers; // <-- Header hier merken
 
         // d. DISTINCT
         if (plan.distinct) {
-            data = executeDistinct(data);
+            finalData = executeDistinct(finalData);
         }
 
         // e. ORDER BY
         if (plan.orderBy) {
-            data = executeOrderBy(data, plan.orderBy, allColumns);
+            finalData = executeOrderBy(finalData, plan.orderBy, allColumns);
         }
 
         // f. LIMIT (TOP)
         if (plan.limit !== null) {
-            data = executeLimit(data, plan.limit);
+            // Korrigiert: plan.limit übergeben
+            finalData = executeLimit(finalData, plan.limit); 
         }
 
-        return data;
+        // 3. Gib das finale Objekt zurück
+        return { data: finalData, headers: finalHeaders };
     }
-
-
+    
+   /**
+     * (STARK AKTUALISIERT) Verwendet jetzt 'dbSchema' für Validierung und PK-Check
+     * Erzwingt NOT NULL für PKs und fügt AUTOINCREMENT-Werte automatisch ein.
+     */
     function handleInsert(query) {
         const insertRegex = /INSERT INTO\s+([a-zA-Z0-9_]+)(?:\s*\((.+?)\))?\s+VALUES\s*\((.+?)\);/i;
         const match = query.match(insertRegex);
-        if (!match) throw new Error('Ungültige INSERT-Syntax. Erwartet: INSERT INTO tabelle (spalten) VALUES (werte) ODER INSERT INTO tabelle VALUES (werte);');
+        if (!match) throw new Error('Ungültige INSERT-Syntax. Erwartet: ... VALUES ...');
+        
         const [_, tableName, colStr, valStr] = match;
-        if (!db[tableName]) throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+
+        if (!db[tableName] || !dbSchema[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        }
+        const schema = dbSchema[tableName];
+        const pk = schema.primaryKey;
+        const autoIncCol = schema.autoincrement;
+        
         const values = valStr.split(',').map(v => v.trim());
         let columns;
+
         if (colStr) {
             columns = colStr.split(',').map(c => c.trim());
-            if (db[tableName].length > 0) {
-                const firstRow = db[tableName][0];
-                for (const col of columns) {
-                    if (!firstRow.hasOwnProperty(col)) throw new Error(`Fehler: Spalte '${col}' existiert nicht in Tabelle '${tableName}'.`);
+            for (const col of columns) {
+                if (!schema.columns.includes(col)) {
+                    throw new Error(`Fehler: Spalte '${col}' existiert nicht in Tabelle '${tableName}'.`);
                 }
             }
+            if (autoIncCol && columns.includes(autoIncCol)) {
+                 throw new Error(`Fehler: Spalte '${autoIncCol}' ist AUTOINCREMENT und darf nicht manuell gesetzt werden.`);
+            }
         } else {
-            if (db[tableName].length === 0) throw new Error(`Fehler: INSERT ohne Spaltenliste in eine leere Tabelle nicht möglich (Struktur unbekannt).`);
-            columns = Object.keys(db[tableName][0]);
+            if (autoIncCol) {
+                throw new Error(`Fehler: Bei Tabellen mit AUTOINCREMENT muss die Spaltenliste (ohne die ID-Spalte) angegeben werden. Z.B. INSERT INTO ${tableName} (name, ...) VALUES (...);`);
+            }
+            columns = schema.columns;
         }
+
         if (columns.length !== values.length) {
-            if (colStr) throw new Error(`Fehler: Die Anzahl der Spalten (${columns.length}) stimmt nicht mit der Anzahl der Werte (${values.length}) überein.`);
-            else throw new Error(`Fehler: Die Anzahl der Werte (${values.length}) stimmt nicht mit der Tabellenstruktur (${columns.length} Spalten) überein.`);
+            throw new Error(`Fehler: Anzahl Spalten (${columns.length}) passt nicht zu Werten (${values.length}).`);
         }
+
         const newRow = {};
         for (let i = 0; i < columns.length; i++) {
             const col = columns[i];
@@ -219,53 +307,110 @@ document.addEventListener('DOMContentLoaded', () => {
             else parsedValue = cleanedValStr;
             newRow[col] = parsedValue;
         }
+
+        if (autoIncCol) {
+            const nextVal = dbSequences[tableName];
+            newRow[autoIncCol] = nextVal;
+            dbSequences[tableName]++;
+        }
+
+        if (pk) {
+            const newPkValue = newRow[pk];
+            if (newPkValue == null) {
+                throw new Error(`PRIMARY KEY-Verletzung: Spalte '${pk}' darf nicht NULL sein.`);
+            }
+            const exists = db[tableName].some(row => row[pk] == newPkValue);
+            if (exists) {
+                throw new Error(`PRIMARY KEY-Verletzung: Ein Eintrag mit ${pk} = ${newPkValue} existiert bereits.`);
+            }
+        }
+
         db[tableName].push(newRow);
         return { message: `1 Zeile erfolgreich in '${tableName}' eingefügt.` };
     }
 
-    /**
-     * Verarbeitet UPDATE-Abfragen.
-     */
-/**
-     * (AKTUALISIERT) Verarbeitet UPDATE-Abfragen.
-     * Erstellt jetzt korrekte, präfixierte Spalten für die WHERE-Logik.
+   /**
+     * (AKTUALISIERT) Verwendet jetzt 'dbSchema' für Validierung
+     * Übergibt PK an executeUpdate für erweiterte Prüfungen.
      */
     function handleUpdate(query) {
         const plan = buildUpdatePlan(query);
         
-        // Erzeuge eine temporäre, präfixierte Spaltenliste für den WHERE-Parser
-        const tempPrefixedData = (db[plan.table] || []).map(row => prefixColumns(plan.table, row));
-        const allColumns = (tempPrefixedData.length > 0) ? Object.keys(tempPrefixedData[0]) : [];
+        const schema = dbSchema[plan.table];
+        if (!schema) {
+            throw new Error(`Fehler: Tabelle '${plan.table}' nicht gefunden.`);
+        }
         
-        const updateCount = executeUpdate(plan, allColumns);
+        const allColumns = schema.columns.map(col => `${plan.table}.${col}`);
+        
+        const updateCount = executeUpdate(plan, allColumns, schema.primaryKey);
         return { message: `${updateCount} Zeile(n) erfolgreich aktualisiert.` };
     }
 
     /**
-     * Verarbeitet DELETE-Abfragen.
-     */
-/**
-     * (AKTUALISIERT) Verarbeitet DELETE-Abfragen.
-     * Erstellt jetzt korrekte, präfixierte Spalten für die WHERE-Logik.
+     * (AKTUALISIERT) Verwendet jetzt 'dbSchema' für Validierung
      */
     function handleDelete(query) {
         const plan = buildDeletePlan(query);
 
-        // Erzeuge eine temporäre, präfixierte Spaltenliste für den WHERE-Parser
-        const tempPrefixedData = (db[plan.table] || []).map(row => prefixColumns(plan.table, row));
-        const allColumns = (tempPrefixedData.length > 0) ? Object.keys(tempPrefixedData[0]) : [];
+        if (!dbSchema[plan.table]) {
+            throw new Error(`Fehler: Tabelle '${plan.table}' nicht gefunden.`);
+        }
+
+        const allColumns = dbSchema[plan.table].columns.map(col => `${plan.table}.${col}`);
         
         const deleteCount = executeDelete(plan, allColumns);
         return { message: `${deleteCount} Zeile(n) erfolgreich gelöscht.` };
     }
+
+
     // --- 6. PARSING-HILFSFUNKTIONEN ---
 
     /**
-     * (STARK ÜBERARBEITET) Zerlegt die SELECT-Abfrage in ihre Teile (den "Plan").
-     * Erkennt jetzt JOIN-Klauseln.
+     * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
+     * Erkennt jetzt 'AUTOINCREMENT' oder 'AUTO_INCREMENT'
      */
+    function buildCreatePlan(query) {
+        const plan = { columns: [], primaryKey: null, autoincrement: null };
+        
+        const tableMatch = query.match(/CREATE TABLE\s+([a-zA-Z0-9_]+)\s*\((.+)\);/i);
+        if (!tableMatch) throw new Error("Ungültige CREATE TABLE Syntax. Erwartet: CREATE TABLE name (col1 type, ...);");
+        
+        plan.table = tableMatch[1];
+        
+        const defs = tableMatch[2].split(',').map(d => d.trim());
+
+        for (const def of defs) {
+            const defUpper = def.toUpperCase();
+            
+            if (defUpper.startsWith('PRIMARY KEY')) {
+                const pkMatch = def.match(/PRIMARY KEY\s*\((.+?)\)/i);
+                if (!pkMatch) throw new Error("Ungültige PRIMARY KEY Syntax. Erwartet: PRIMARY KEY(colName)");
+                plan.primaryKey = pkMatch[1].trim();
+            } else {
+                const parts = def.split(/\s+/);
+                const colName = parts[0].trim();
+                plan.columns.push(colName);
+                
+                if (defUpper.includes('AUTOINCREMENT') || defUpper.includes('AUTO_INCREMENT')) {
+                    plan.autoincrement = colName;
+                }
+            }
+        }
+        
+        if (plan.primaryKey && !plan.columns.includes(plan.primaryKey)) {
+            throw new Error(`Fehler: Der PRIMARY KEY '${plan.primaryKey}' ist nicht als Spalte definiert.`);
+        }
+        
+        if (plan.autoincrement && plan.primaryKey !== plan.autoincrement) {
+            throw new Error(`Fehler: Die AUTOINCREMENT-Spalte '${plan.autoincrement}' muss auch als PRIMARY KEY definiert sein.`);
+        }
+        
+        return plan;
+    }
+
     /**
-     * (STARK ÜBERARBEITET) Zerlegt die SELECT-Abfrage in ihre Teile (den "Plan").
+     * (AKTUALISIERT) buildQueryPlan (SELECT)
      * Erkennt jetzt JOIN, DISTINCT, TOP und LIMIT.
      */
     function buildQueryPlan(query) {
@@ -277,7 +422,6 @@ document.addEventListener('DOMContentLoaded', () => {
             orderBy: null
         };
 
-        // 1. FROM und JOINs (unverändert)
         const fromMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)((?:\s+(?:INNER\s+)?JOIN\s+[a-zA-Z0-9_]+\s+ON\s+.+?)+)/i);
         if (fromMatch) {
             plan.from = fromMatch[1];
@@ -295,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
             plan.from = simpleFromMatch[1];
         }
 
-        // 2. SELECT (unverändert, parst weiterhin 'TOP')
         const selectMatch = query.match(/SELECT\s+(.+?)\s+FROM/i);
         if (!selectMatch) throw new Error("Syntax-Fehler: 'SELECT'-Klausel nicht gefunden.");
         let selectClause = selectMatch[1].trim();
@@ -307,39 +450,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const topMatch = selectClause.match(/^TOP\s+([0-9]+)\s+/i);
         if (topMatch) {
-            plan.limit = parseInt(topMatch[1]); // 'TOP' setzt plan.limit
+            plan.limit = parseInt(topMatch[1]);
             selectClause = selectClause.substring(topMatch[0].length).trim();
         }
         
         plan.select = parseSelectColumns(selectClause);
 
-        // 3. WHERE (AKTUALISIERT: Stoppt jetzt auch bei LIMIT)
         const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|;|$)/i);
         if (whereMatch) plan.where = whereMatch[1].trim();
 
-        // 4. ORDER BY (AKTUALISIERT: Stoppt jetzt auch bei LIMIT)
         const orderByMatch = query.match(/ORDER BY\s+(.+?)(?:\s+LIMIT|;|$)/i);
         if (orderByMatch) plan.orderBy = parseOrderBy(orderByMatch[1]);
 
-        // 5. LIMIT (NEUE REGEL)
-        // Sucht nach 'LIMIT <n>' ganz am Ende
         const limitMatch = query.match(/LIMIT\s+([0-9]+)\s*;?$/i);
         if (limitMatch) {
             const limitValue = parseInt(limitMatch[1]);
             if (plan.limit !== null) {
-                // Fehler, wenn 'TOP' bereits 'plan.limit' gesetzt hat
                 throw new Error("Syntax-Fehler: Es können nicht 'TOP' und 'LIMIT' gleichzeitig verwendet werden.");
             }
-            plan.limit = limitValue; // 'LIMIT' setzt plan.limit
+            plan.limit = limitValue;
         }
 
         return plan;
     }
-
-    // (parseSelectColumns, parseOrderBy sind unverändert)
-    // ... (Füge hier deine parseSelectColumns, parseOrderBy, buildUpdatePlan, buildDeletePlan ein) ...
-    // ... (Der Code ist lang, daher füge ich sie hier nicht erneut ein) ...
-
+    
+    // (parseSelectColumns, parseOrderBy - unverändert)
     function parseSelectColumns(selectClause) {
         const columnStrings = selectClause.split(',').map(c => c.trim());
         if (columnStrings.length === 1 && columnStrings[0] === '*') {
@@ -369,29 +504,46 @@ document.addEventListener('DOMContentLoaded', () => {
         return { column: column, direction: direction };
     }
 
+    /**
+     * (AKTUALISIERT) buildUpdatePlan (Validiert SET gegen Schema)
+     */
     function buildUpdatePlan(query) {
         const plan = {};
         const updateMatch = query.match(/UPDATE\s+([a-zA-Z0-9_]+)\s+SET/i);
         if (!updateMatch) throw new Error("Syntax-Fehler: 'UPDATE table SET' nicht gefunden.");
+        
         plan.table = updateMatch[1];
+        const schema = dbSchema[plan.table];
+        if (!schema) throw new Error(`Fehler: Tabelle '${plan.table}' nicht gefunden.`);
+
         const setMatch = query.match(/SET\s+(.+?)(?:\s+WHERE|;|$)/i);
         if (!setMatch) throw new Error("Syntax-Fehler: 'SET'-Klausel nicht gefunden.");
+        
         plan.setClauses = setMatch[1].split(',').map(clause => {
             const parts = clause.split('=');
             if (parts.length !== 2) throw new Error(`Syntax-Fehler in SET-Klausel: '${clause}'`);
+            
             const column = parts[0].trim();
+            if (!schema.columns.includes(column)) {
+                throw new Error(`Fehler: Spalte '${column}' in SET-Klausel nicht in Tabelle '${plan.table}'.`);
+            }
+            
             const valueStr = parts[1].trim();
             let value;
             const cleanedValStr = valueStr.replace(/['"]/g, '');
             if (!isNaN(parseFloat(cleanedValStr)) && isFinite(cleanedValStr)) value = parseFloat(cleanedValStr);
             else value = cleanedValStr;
+            
             return { column, value };
         });
+
         const whereMatch = query.match(/WHERE\s+(.+?);?$/i);
         if (whereMatch) plan.where = whereMatch[1].trim();
+
         return plan;
     }
     
+    // (buildDeletePlan - unverändert)
     function buildDeletePlan(query) {
         const plan = {};
         const deleteMatch = query.match(/DELETE FROM\s+([a-zA-Z0-9_]+)/i);
@@ -402,68 +554,77 @@ document.addEventListener('DOMContentLoaded', () => {
         return plan;
     }
 
+
     // --- 7. EXECUTION-PIPELINE-FUNKTIONEN ---
 
     /**
-     * (STARK ÜBERARBEITET) Führt den FROM-Teil aus (inkl. JOINs).
-     * Gibt Daten mit präfixierten Spaltennamen zurück.
+     * (AKTUALISIERT) Führt den CREATE-Plan aus
+     * Initialisiert jetzt die Sequenz für AUTOINCREMENT
+     */
+    function executeCreate(plan) {
+        const tableName = plan.table;
+        if (db[tableName] || dbSchema[tableName]) {
+            throw new Error(`Fehler: Tabelle '${tableName}' existiert bereits.`);
+        }
+        
+        db[tableName] = [];
+        
+        dbSchema[tableName] = {
+            columns: plan.columns,
+            primaryKey: plan.primaryKey,
+            autoincrement: plan.autoincrement
+        };
+        
+        if (plan.autoincrement) {
+            dbSequences[tableName] = 1;
+        }
+        
+        return `Tabelle '${tableName}' erfolgreich erstellt.`;
+    }
+
+    /**
+     * (AKTUALISIERT) executeFrom (Validiert gegen Schema)
      */
     function executeFrom(plan) {
         const baseTable = plan.from;
-        if (!db[baseTable]) {
+        if (!db[baseTable] || !dbSchema[baseTable]) {
             throw new Error(`Fehler: Tabelle '${baseTable}' nicht gefunden.`);
         }
 
-        // 1. Lade Basistabelle und präfixiere Spalten
         let data = db[baseTable].map(row => prefixColumns(baseTable, row));
 
-        // 2. Führe alle JOINs nacheinander aus
         for (const join of plan.joins) {
             const joinTable = join.table;
-            if (!db[joinTable]) {
+            if (!db[joinTable] || !dbSchema[joinTable]) {
                 throw new Error(`Fehler: JOIN-Tabelle '${joinTable}' nicht gefunden.`);
             }
 
-            // 2a. Lade Join-Tabelle und präfixiere Spalten
             const joinData = db[joinTable].map(row => prefixColumns(joinTable, row));
-            
-            // 2b. Parse die simple ON-Klausel (z.B. users.id = orders.user_id)
             const onMatch = join.on.match(/([a-zA-Z0-9_\.]+)\s*=\s*([a-zA-Z0-9_\.]+)/);
-            if (!onMatch) {
-                throw new Error(`Syntax-Fehler in ON-Klausel: '${join.on}'. Nur 'table1.col1 = table2.col2' wird unterstützt.`);
-            }
+            if (!onMatch) throw new Error(`Syntax-Fehler in ON-Klausel: '${join.on}'.`);
+            
             const [_, col1, col2] = onMatch.map(s => s.trim());
 
-            // 2c. Führe Cartesian Product (Kreuzprodukt) + Filter (INNER JOIN) aus
             const joinedData = [];
             for (const rowA of data) {
                 for (const rowB of joinData) {
                     const mergedRow = { ...rowA, ...rowB };
-                    // Prüfe die ON-Bedingung
                     if (mergedRow[col1] == mergedRow[col2]) {
                         joinedData.push(mergedRow);
                     }
                 }
             }
-            data = joinedData; // Das Ergebnis des Joins ist die Basis für den nächsten
+            data = joinedData;
         }
         
         return data;
     }
 
-    /**
-     * (STARK ÜBERARBEITET) Führt den WHERE-Teil aus.
-     * Benötigt jetzt allColumns, um Spaltennamen aufzulösen.
-     */
+    // (executeWhere - unverändert)
     function executeWhere(data, whereClause, allColumns) {
-        // 1. Übersetze die SQL-Bedingung in eine JS-Bedingung
-        // z.B. "age > 20" -> "row['users.age'] > 20"
         const jsClause = convertSqlWhereToJs(whereClause, allColumns);
-
-        // 2. Filtere die Daten
         return data.filter(row => {
             try {
-                // 3. Führe die JS-Bedingung für JEDE Zeile in der Sandbox aus
                 return evaluateJsExpression(row, jsClause);
             } catch (e) {
                 throw new Error(`Fehler beim Auswerten der WHERE-Klausel '${jsClause}': ${e.message}`);
@@ -472,55 +633,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * (STARK ÜBERARBEITET) Führt den SELECT-Teil aus.
-     */
-    /**
      * (AKTUALISIERT) Führt den SELECT-Teil aus.
-     * `SELECT *` entfernt jetzt Präfixe bei Abfragen ohne JOIN.
+     * Gibt jetzt ein { data, headers } Objekt zurück.
      */
     function executeSelect(data, selectPlan, allColumns) {
-        // selectPlan ist z.B. [{ func: 'MIN', expr: 'Price', alias: 'MIN(Price)' }]
-        
-        // 1. Prüfen, ob *irgendeine* Spalte eine Aggregatfunktion ist
         const isAggregateQuery = selectPlan.some(col => col.func);
 
         if (isAggregateQuery) {
-            // --- FALL 1: AGGREGATION ---
-            // (Unverändert)
             const isPureAggregate = selectPlan.every(col => col.func);
             if (!isPureAggregate) {
                 const nonAggCol = selectPlan.find(col => !col.func).expr;
                 throw new Error(`Fehler: Die Spalte '${nonAggCol}' ist nicht in einer Aggregatfunktion.`);
             }
-
+            const headers = selectPlan.map(col => col.alias);
             const resultRow = {};
             for (const col of selectPlan) {
                 resultRow[col.alias] = calculateAggregate(data, col.func, col.expr, allColumns);
             }
-            return [resultRow];
+            return { data: [resultRow], headers: headers };
 
         } else {
-            // --- FALL 2: PROJEKTION ---
-            
             if (selectPlan.length === 1 && selectPlan[0].expr === '*') {
-                // --- HIER IST DIE NEUE LOGIK FÜR SELECT * ---
-                
-                // Finde alle einzigartigen Präfixe (Tabellennamen) in den Spalten
                 const prefixes = new Set(allColumns.map(col => col.split('.')[0]));
-                
                 if (prefixes.size === 1) {
-                    // Nur eine Tabelle beteiligt (kein JOIN).
-                    // Entferne die Präfixe für eine saubere Ausgabe.
-                    return data.map(row => unPrefixColumns(row));
+                    const tableName = allColumns[0].split('.')[0];
+                    const headers = dbSchema[tableName] ? dbSchema[tableName].columns : [];
+                    const finalData = data.map(row => unPrefixColumns(row));
+                    return { data: finalData, headers: headers };
                 }
-                
-                // Mehrere Tabellen (JOIN) beteiligt. Behalte die Präfixe.
-                return data;
-                // --- ENDE DER NEUEN LOGIK ---
+                return { data: data, headers: allColumns };
             }
 
-            // (Code für SELECT col1, col2 ... - unverändert)
-            return data.map(row => {
+            const headers = selectPlan.map(col => col.alias);
+            const finalData = data.map(row => {
                 const newRow = {};
                 for (const col of selectPlan) {
                     try {
@@ -533,129 +678,98 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return newRow;
             });
+            return { data: finalData, headers: headers };
         }
     }
 
-    /**
-     * (STARK ÜBERARBEITET) Führt den ORDER BY-Teil aus.
-     */
+    // (executeOrderBy - unverändert)
     function executeOrderBy(data, orderByPlan, allColumns) {
         const { column, direction } = orderByPlan;
-        
-        // 1. Finde den voll qualifizierten Spaltennamen (z.B. 'age' -> 'users.age')
-        // (Oder prüfe, ob es ein Alias aus dem SELECT ist)
         let sortKey;
         if (data.length > 0 && data[0].hasOwnProperty(column)) {
-             // Es ist ein Alias (z.B. ORDER BY "new Age")
             sortKey = column;
         } else {
-            // Es ist ein Spaltenname
             sortKey = resolveColumnName(column, allColumns);
         }
-
         return data.sort((a, b) => {
             if (!a.hasOwnProperty(sortKey) || !b.hasOwnProperty(sortKey)) {
                 throw new Error(`Fehler: Spalte '${column}' in ORDER BY nicht gefunden.`);
             }
             const valA = a[sortKey];
             const valB = b[sortKey];
-
             let comparison = 0;
             if (typeof valA === 'number' && typeof valB === 'number') {
                 comparison = valA - valB;
             } else {
                 comparison = String(valA).localeCompare(String(valB));
             }
-
             return (direction === 'DESC') ? (comparison * -1) : comparison;
         });
     }
 
-    // (executeUpdate, executeDelete sind ÜBERARBEITET, um allColumns zu nutzen)
-    
     /**
      * (AKTUALISIERT) Führt den UPDATE-Plan aus.
-     * Präfixt jetzt Zeilen für 'executeWhere' korrekt.
+     * Prüft jetzt auf PK-Verletzungen (NULL und Duplikate).
      */
-    /**
-     * (KORRIGIERT) Führt den UPDATE-Plan aus.
-     * Entfernt die fehlerhafte 'hasOwnProperty'-Prüfung.
-     */
-    function executeUpdate(plan, allColumns) { // allColumns ist jetzt präfixiert
+    function executeUpdate(plan, allColumns, primaryKey) { // primaryKey als neuer Parameter
         const tableName = plan.table;
-        if (!db[tableName]) {
-            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
-        }
-
+        if (!db[tableName]) throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
+        
         let updateCount = 0;
         
         db[tableName].forEach(row => {
-            
             let matchesWhere = true;
-            
             if (plan.where) {
                 const prefixedRow = prefixColumns(tableName, row);
                 matchesWhere = executeWhere([prefixedRow], plan.where, allColumns).length > 0;
             }
-            
             if (matchesWhere) {
                 updateCount++;
-                
+                const updatedRow = { ...row }; 
                 plan.setClauses.forEach(clause => {
                     const { column, value } = clause;
-                    
-                    // 1. Löse den Spaltennamen auf (z.B. 'id' -> 'users.id')
-                    // Dies ist unsere *eigentliche* Überprüfung, ob die Spalte in der Tabelle existiert.
-                    const resolvedCol = resolveColumnName(column, allColumns);
-                    
-                    // 2. Hole den *rohen* Spaltennamen (z.B. 'users.id' -> 'id')
-                    const rawCol = resolvedCol.split('.')[1] || resolvedCol; 
-                    
-                    // --- FEHLERHAFTE PRÜFUNG ENTFERNT ---
-                    // Die 'if (!row.hasOwnProperty(rawCol))' Prüfung wurde entfernt.
-                    // 'resolveColumnName' hat bereits bestätigt, dass die Spalte 'id'
-                    // zur Tabelle 'users' gehört.
-                    
-                    // 3. Aktualisiere/Setze den Wert in der Originalzeile
-                    row[rawCol] = value;
+                    if (column === primaryKey && value == null) {
+                        throw new Error(`PRIMARY KEY-Verletzung: Spalte '${primaryKey}' darf nicht NULL sein.`);
+                    }
+                    updatedRow[column] = value;
                 });
+                if (primaryKey) {
+                    const newPkValue = updatedRow[primaryKey];
+                    const oldPkValue = row[primaryKey];
+                    if (newPkValue != oldPkValue) { 
+                        const exists = db[tableName].some(r => r[primaryKey] == newPkValue);
+                        if (exists) {
+                            throw new Error(`PRIMARY KEY-Verletzung: Ein Eintrag mit ${primaryKey} = ${newPkValue} existiert bereits.`);
+                        }
+                    }
+                }
+                Object.assign(row, updatedRow);
             }
         });
-
         return updateCount;
     }
 
-    /**
-     * (AKTUALISIERT) Führt den DELETE-Plan aus.
-     * Präfixt jetzt Zeilen für 'executeWhere' korrekt.
-     */
-    function executeDelete(plan, allColumns) { // allColumns ist jetzt präfixiert
+    // (executeDelete - unverändert)
+    function executeDelete(plan, allColumns) {
         const tableName = plan.table;
-        if (!db[tableName]) {
-            throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
-        }
-
+        if (!db[tableName]) throw new Error(`Fehler: Tabelle '${tableName}' nicht gefunden.`);
         const originalLength = db[tableName].length;
         let rowsToKeep;
-
         if (plan.where) {
             rowsToKeep = db[tableName].filter(row => {
-                // 1. Präfixe die *aktuelle* Zeile
                 const prefixedRow = prefixColumns(tableName, row);
-                // 2. Teste sie
                 const matchesWhere = executeWhere([prefixedRow], plan.where, allColumns).length > 0;
-                return !matchesWhere; // Behalte, wenn sie *nicht* matcht
+                return !matchesWhere;
             });
         } else {
-            rowsToKeep = []; // Lösche alles
+            rowsToKeep = [];
         }
-
         db[tableName] = rowsToKeep;
-        const deleteCount = originalLength - rowsToKeep.length;
+        const deleteCount = originalLength - db[tableName].length;
         return deleteCount;
     }
     
-    // (executeDistinct, executeLimit sind unverändert)
+    // (executeDistinct, executeLimit - unverändert)
     function executeDistinct(data) {
         const seen = new Set();
         return data.filter(row => {
@@ -672,11 +786,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return data.slice(0, limit);
     }
 
+
     // --- 8. ALLGEMEINE HELPER-FUNKTIONEN ---
     
     /**
-     * (NEU) Wandelt eine Zeile um: { id: 1 } -> { "users.id": 1 }
+     * (NEU) Holt alle präfixierten Spalten aus dem Schema für einen Plan
      */
+    function getPrefixedColumnsFromPlan(plan) {
+        let allColumns = [];
+        if (dbSchema[plan.from]) {
+            allColumns.push(...dbSchema[plan.from].columns.map(col => `${plan.from}.${col}`));
+        }
+        for (const join of plan.joins) {
+            if (dbSchema[join.table]) {
+                allColumns.push(...dbSchema[join.table].columns.map(col => `${join.table}.${col}`));
+            }
+        }
+        return allColumns;
+    }
+    
+    // (prefixColumns, unPrefixColumns - unverändert)
     function prefixColumns(tableName, row) {
         const newRow = {};
         for (const key in row) {
@@ -685,78 +814,51 @@ document.addEventListener('DOMContentLoaded', () => {
         return newRow;
     }
 
-    /**
-     * (NEU) Löst einen Spaltennamen auf (z.B. "age" -> "users.age")
-     * Wirft Fehler bei Mehrdeutigkeit.
-     */
+    function unPrefixColumns(row) {
+        const newRow = {};
+        for (const key in row) {
+            newRow[key.split('.')[1] || key] = row[key];
+        }
+        return newRow;
+    }
+
+    // (resolveColumnName, resolveColumnNames - unverändert)
     function resolveColumnName(colName, allColumns) {
-        // 1. Ist bereits qualifiziert (z.B. "users.age")
         if (colName.includes('.')) {
-            if (allColumns.includes(colName)) {
-                return colName;
-            }
+            if (allColumns.includes(colName)) return colName;
             throw new Error(`Fehler: Spalte '${colName}' nicht gefunden.`);
         }
-        
-        // 2. Ist nicht qualifiziert (z.B. "age")
         const matches = allColumns.filter(col => col.endsWith(`.${colName}`));
-        
-        if (matches.length === 1) {
-            return matches[0]; // z.B. "users.age"
-        }
-        if (matches.length > 1) {
-            throw new Error(`Fehler: Spaltenname '${colName}' ist mehrdeutig (z.B. in ${matches.join(', ')}).`);
-        }
-        
+        if (matches.length === 1) return matches[0];
+        if (matches.length > 1) throw new Error(`Fehler: Spaltenname '${colName}' ist mehrdeutig.`);
         throw new Error(`Fehler: Spalte '${colName}' nicht gefunden.`);
     }
 
-    /**
-     * (NEU) Wandelt einen SQL-Ausdruck in JS um (z.B. "age + 10" -> "row['users.age'] + 10")
-     */
     function resolveColumnNames(expression, allColumns) {
-        // Finde alle Spaltennamen (table.col oder nur col)
         return expression.replace(/\b([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)?)\b/g, (match) => {
-            // Wenn der Match eine Zahl ist, ignoriere ihn
-            if (!isNaN(parseFloat(match))) {
-                return match;
-            }
-            // Ansonsten, löse ihn auf und setze ihn in row[...]
+            if (!isNaN(parseFloat(match))) return match;
             const resolvedCol = resolveColumnName(match, allColumns);
             return `row["${resolvedCol}"]`;
         });
     }
 
-    /**
-     * (STARK ÜBERARBEITET) Übersetzt SQL WHERE in JS.
-     */
-    /**
-     * (AKTUALISIERT) Übersetzt SQL WHERE in JS.
-     * Erkennt jetzt alle Vergleiche: >=, <=, !=, <>
-     */
+    // (convertSqlWhereToJs - unverändert)
     /**
      * (AKTUALISIERT) Übersetzt SQL WHERE in JS.
      * Erkennt jetzt alle Vergleiche: >=, <=, !=, <>
      */
     function convertSqlWhereToJs(clause, allColumns) {
         let jsClause = clause;
-
-        // Hilfsfunktion, um einen Spaltennamen aufzulösen und für JS zu quoten
         const res = (col) => resolveColumnNames(col, allColumns);
 
-        // REGEL 1: IS (NOT) NULL (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+IS\s+NOT\s+NULL\b/gi, (m, col) => `${res(col)} != null`);
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+IS\s+NULL\b/gi, (m, col) => `${res(col)} == null`);
-
-        // REGEL 2: LIKE / NOT LIKE (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+(NOT\s+)?LIKE\s+(["'](.*?)["'])/gi, (m, col, notOp, strLit, pattern) => {
             const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const regexPattern = escapedPattern.replace(/%/g, '.*').replace(/_/g, '.');
             const jsTest = `(new RegExp('^${regexPattern}$', 'i')).test(String(${res(col)}))`;
             return (notOp) ? `!${jsTest}` : jsTest;
         });
-        
-        // REGEL 3: IN / NOT IN (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+(NOT\s+)?IN\s*\((.+?)\)/gi, (m, col, notOp, valueList) => {
             let jsList, jsCheck;
             if (valueList.includes("'") || valueList.includes('"')) {
@@ -769,8 +871,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const jsTest = `${jsList}.includes(${jsCheck})`;
             return (notOp) ? `!${jsTest}` : jsTest;
         });
-
-        // REGEL 4: BETWEEN / NOT BETWEEN (unverändert)
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s+(NOT\s+)?BETWEEN\s+([0-9\.]+|["'].*?["'])\s+AND\s+([0-9\.]+|["'].*?["'])/gi, (m, col, notOp, val1, val2) => {
             let jsCheck = res(col), jsVal1 = val1, jsVal2 = val2;
             if (val1.startsWith("'") || val1.startsWith('"')) {
@@ -781,48 +881,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const jsTest = `(${jsCheck} >= ${jsVal1} && ${jsCheck} <= ${jsVal2})`;
             return (notOp) ? `!${jsTest}` : jsTest;
         });
-
-        // REGEL 5: AND / OR / NOT (unverändert)
         jsClause = jsClause.replace(/\bAND\b/gi, ' && ').replace(/\bOR\b/gi, ' || ').replace(/\bNOT\b/gi, ' ! ');
-
-        // REGEL 6: Vergleiche (z.B. col = col, col = num, col = str)
-        // --- HIER IST DIE ÄNDERUNG ---
-        // Die Regex (>=|<=|!=|<>|=|>|<) prüft jetzt alle Operatoren.
         jsClause = jsClause.replace(/\b([a-zA-Z0-9_\.]+)\s*(>=|<=|!=|<>|=|>|<)\s*([a-zA-Z0-9_\.]+|["'].*?["']|[0-9\.]+)/gi, (match, col1, op, val) => {
-            
-            // NEUE Logik, um Operatoren zu übersetzen
             let jsOp = op;
-            if (op === '=') jsOp = '==';  // SQL '=' -> JS '=='
-            if (op === '<>') jsOp = '!='; // SQL '<>' -> JS '!='
-            // '!=' bleibt '!='
-            
+            if (op === '=') jsOp = '==';
+            if (op === '<>') jsOp = '!=';
             const jsCol1 = res(col1);
-            let jsVal = val;
-            
             if (val.startsWith("'") || val.startsWith('"')) {
-                // Vergleich mit String -> case-insensitive
                 return `(String(${jsCol1}).toLowerCase() ${jsOp} ${val.toLowerCase()})`;
             } else if (!isNaN(parseFloat(val))) {
-                // Vergleich mit Zahl
                 return `(${jsCol1} ${jsOp} ${val})`;
             } else {
-                // Vergleich mit anderer Spalte
                 const jsCol2 = res(val);
                 return `(${jsCol1} ${jsOp} ${jsCol2})`;
             }
         });
-        // --- ENDE DER ÄNDERUNG ---
-
         return jsClause;
     }
 
-    /**
-     * (STARK ÜBERARBEITET) Führt einen JS-Ausdruck sicher aus.
-     * Nutzt jetzt 'row' als einziges Argument.
-     */
+    // (evaluateJsExpression - unverändert)
     function evaluateJsExpression(row, jsExpression) {
         try {
-            // Die neue Sandbox: new Function('row', 'return row["users.age"] + 10')
             const evaluator = new Function('row', `'use strict'; return ${jsExpression};`);
             return evaluator(row);
         } catch (e) {
@@ -830,17 +909,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * (STARK ÜBERARBEITET) Berechnet Aggregate
-     */
+    // (calculateAggregate - unverändert)
     function calculateAggregate(data, funcName, expr, allColumns) {
         if (data.length === 0) return null;
-        
         let targetCol = null;
         if (expr !== '*') {
             targetCol = resolveColumnName(expr, allColumns);
         }
-
         switch (funcName) {
             case 'COUNT':
                 if (expr === '*') return data.length;
@@ -870,49 +945,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Unbekannte Aggregatfunktion: ${funcName}`);
         }
     }
-    /**
-     * (NEU) Wandelt eine präfixierte Zeile zurück: { "users.id": 1 } -> { id: 1 }
-     */
-    function unPrefixColumns(row) {
-        const newRow = {};
-        for (const key in row) {
-            // "users.id" -> "id"
-            // "id" (ohne Punkt) -> "id"
-            newRow[key.split('.')[1] || key] = row[key];
-        }
-        return newRow;
-    }
     
-    // (displayResults, displayError sind unverändert)
+    // (displayResults, displayError - unverändert)
+    /**
+     * (AKTUALISIERT) Zeigt die Ergebnisse an.
+     * Verarbeitet jetzt { data, headers } und zeigt Header auch bei 0 Zeilen an.
+     */
     function displayResults(result) {
+        // Fall 1: Erfolgsmeldung (INSERT, UPDATE, DELETE, CREATE)
         if (result.message) {
             messageDiv.textContent = result.message;
             outputDiv.innerHTML = '';
             return;
         }
-        if (Array.isArray(result)) {
-            if (result.length === 0) {
+
+        // Fall 2: SELECT-Ergebnisobjekt
+        if (result.data !== undefined && result.headers !== undefined) {
+            const data = result.data;
+            const headers = result.headers;
+
+            // Erfolgsmeldung (0 oder N Zeilen)
+            if (data.length === 0) {
                 messageDiv.textContent = 'Abfrage erfolgreich ausgeführt. 0 Zeilen zurückgegeben.';
+            } else {
+                messageDiv.textContent = `Abfrage erfolgreich ausgeführt. ${data.length} Zeilen zurückgegeben.`;
+            }
+
+            // Wenn keine Header definiert sind (seltsamer Fall), nichts tun
+            if (headers.length === 0) {
                 return;
             }
-            messageDiv.textContent = `Abfrage erfolgreich ausgeführt. ${result.length} Zeilen zurückgegeben.`;
+
+            // --- NEUE LOGIK: Tabelle IMMER zeichnen ---
             const table = document.createElement('table');
+            
+            // 1. Header zeichnen
             const thead = table.createTHead();
             const headerRow = thead.insertRow();
-            const headers = Object.keys(result[0]);
             headers.forEach(headerText => {
                 const th = document.createElement('th');
                 th.textContent = headerText;
                 headerRow.appendChild(th);
             });
-            const tbody = table.createTBody();
-            result.forEach(rowData => {
-                const row = tbody.insertRow();
-                headers.forEach(header => {
-                    const cell = row.insertCell();
-                    cell.textContent = rowData[header];
+
+            // 2. Datenzeilen zeichnen, NUR WENN VORHANDEN
+            if (data.length > 0) {
+                const tbody = table.createTBody();
+                data.forEach(rowData => {
+                    const row = tbody.insertRow();
+                    headers.forEach(header => {
+                        const cell = row.insertCell();
+                        cell.textContent = rowData[header] === null ? 'null' : rowData[header];
+                    });
                 });
-            });
+            }
+
             outputDiv.appendChild(table);
         }
     }
