@@ -370,45 +370,73 @@ document.addEventListener('DOMContentLoaded', () => {
      * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
      * Erkennt jetzt 'AUTOINCREMENT' oder 'AUTO_INCREMENT'
      */
+    /**
+     * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
+     * Erkennt jetzt 'AUTO_INCREMENT' (MySQL-Syntax).
+     */
+    /**
+     * (AKTUALISIERT) Zerlegt die CREATE TABLE-Abfrage
+     * Erkennt jetzt AUTO_INCREMENT und inline PRIMARY KEY.
+     */
     function buildCreatePlan(query) {
         const plan = { columns: [], primaryKey: null, autoincrement: null };
-        
+
         const tableMatch = query.match(/CREATE TABLE\s+([a-zA-Z0-9_]+)\s*\((.+)\);/i);
         if (!tableMatch) throw new Error("Ungültige CREATE TABLE Syntax. Erwartet: CREATE TABLE name (col1 type, ...);");
-        
+
         plan.table = tableMatch[1];
-        
+
         const defs = tableMatch[2].split(',').map(d => d.trim());
 
         for (const def of defs) {
             const defUpper = def.toUpperCase();
-            
+
+            // 1. PRIMARY KEY Definition (am Ende)
             if (defUpper.startsWith('PRIMARY KEY')) {
                 const pkMatch = def.match(/PRIMARY KEY\s*\((.+?)\)/i);
                 if (!pkMatch) throw new Error("Ungültige PRIMARY KEY Syntax. Erwartet: PRIMARY KEY(colName)");
+                // Fehler, wenn PK schon anders gesetzt wurde
+                if (plan.primaryKey !== null && plan.primaryKey !== pkMatch[1].trim()) {
+                     throw new Error(`Fehler: PRIMARY KEY kann nur einmal definiert werden.`);
+                }
                 plan.primaryKey = pkMatch[1].trim();
             } else {
+                // 2. Spaltendefinition
                 const parts = def.split(/\s+/);
                 const colName = parts[0].trim();
                 plan.columns.push(colName);
-                
-                if (defUpper.includes('AUTOINCREMENT') || defUpper.includes('AUTO_INCREMENT')) {
+
+                // --- NEUE LOGIK FÜR INLINE PK ---
+                // Prüfe, ob "PRIMARY KEY" in dieser Spaltendefinition vorkommt
+                if (defUpper.includes('PRIMARY KEY')) {
+                     // Fehler, wenn PK schon anders gesetzt wurde
+                    if (plan.primaryKey !== null && plan.primaryKey !== colName) {
+                        throw new Error(`Fehler: PRIMARY KEY kann nur einmal definiert werden.`);
+                    }
+                    plan.primaryKey = colName;
+                }
+                // --- ENDE ---
+
+                // Prüfe auf AUTO_INCREMENT
+                if (defUpper.includes('AUTO_INCREMENT')) {
                     plan.autoincrement = colName;
                 }
             }
         }
-        
+
+        // Validierung 1: PK muss als Spalte definiert sein
         if (plan.primaryKey && !plan.columns.includes(plan.primaryKey)) {
+            // Dies fängt jetzt auch den Fall ab, dass NUR PRIMARY KEY(col) verwendet wurde
             throw new Error(`Fehler: Der PRIMARY KEY '${plan.primaryKey}' ist nicht als Spalte definiert.`);
         }
-        
+
+        // Validierung 2: AI muss auch PK sein
         if (plan.autoincrement && plan.primaryKey !== plan.autoincrement) {
-            throw new Error(`Fehler: Die AUTOINCREMENT-Spalte '${plan.autoincrement}' muss auch als PRIMARY KEY definiert sein.`);
+            throw new Error(`Fehler: Die AUTO_INCREMENT-Spalte '${plan.autoincrement}' muss auch als PRIMARY KEY definiert sein.`);
         }
-        
+
         return plan;
     }
-
     /**
      * (AKTUALISIERT) buildQueryPlan (SELECT)
      * Erkennt jetzt JOIN, DISTINCT, TOP und LIMIT.
